@@ -24,23 +24,14 @@ function getServiceAccount() {
   const projectId = process.env.FIREBASE_PROJECT_ID;
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
   const privateKey = process.env.FIREBASE_PRIVATE_KEY
-    ? process.env.FIREBASE_PRIVATE_KEY
-        .trim()
-        .replace(/^"|"$/g, "")
-        .replace(/\\n/g, "\n")
+    ? process.env.FIREBASE_PRIVATE_KEY.trim().replace(/^"|"$/g, "").replace(/\\n/g, "\n")
     : "";
 
   if (!projectId || !clientEmail || !privateKey) {
-    throw new Error(
-      "Variáveis Firebase ausentes. Configure FIREBASE_SERVICE_ACCOUNT_BASE64 na Vercel."
-    );
+    throw new Error("Variáveis Firebase ausentes. Configure FIREBASE_SERVICE_ACCOUNT_BASE64 na Vercel.");
   }
 
-  return {
-    projectId,
-    clientEmail,
-    privateKey
-  };
+  return { projectId, clientEmail, privateKey };
 }
 
 const serviceAccount = getServiceAccount();
@@ -60,16 +51,12 @@ export function json(res, statusCode, payload) {
   return res.end(JSON.stringify(payload));
 }
 
-export async function requireAdminFromToken(req) {
-  const authHeader = req.headers.authorization || req.headers.Authorization || "";
-
-  if (!authHeader.startsWith("Bearer ")) {
+export async function requireAdminByIdToken(idToken) {
+  if (!idToken) {
     const error = new Error("Token de autenticação ausente.");
     error.statusCode = 401;
     throw error;
   }
-
-  const idToken = authHeader.replace("Bearer ", "").trim();
 
   const decoded = await auth.verifyIdToken(idToken);
   const userSnap = await db.collection("users").doc(decoded.uid).get();
@@ -99,4 +86,17 @@ export async function requireAdminFromToken(req) {
     email: decoded.email,
     ...user
   };
+}
+
+export async function requireAdminFromToken(req) {
+  const authHeader = req.headers?.authorization || req.headers?.Authorization || "";
+
+  if (!authHeader.startsWith("Bearer ")) {
+    const error = new Error("Token de autenticação ausente.");
+    error.statusCode = 401;
+    throw error;
+  }
+
+  const idToken = authHeader.replace("Bearer ", "").trim();
+  return requireAdminByIdToken(idToken);
 }
