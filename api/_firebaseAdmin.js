@@ -2,32 +2,48 @@ import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { getFirestore } from "firebase-admin/firestore";
 
-const projectId = process.env.FIREBASE_PROJECT_ID;
-const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-const privateKey = process.env.FIREBASE_PRIVATE_KEY
-  ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n")
-  : "";
+function getServiceAccount() {
+  if (process.env.FIREBASE_SERVICE_ACCOUNT_BASE64) {
+    const serviceAccountJson = Buffer
+      .from(process.env.FIREBASE_SERVICE_ACCOUNT_BASE64, "base64")
+      .toString("utf8");
 
-if (!projectId) {
-  throw new Error("FIREBASE_PROJECT_ID não configurado na Vercel.");
+    const serviceAccount = JSON.parse(serviceAccountJson);
+
+    return {
+      projectId: serviceAccount.project_id,
+      clientEmail: serviceAccount.client_email,
+      privateKey: serviceAccount.private_key
+    };
+  }
+
+  const projectId = process.env.FIREBASE_PROJECT_ID;
+  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+  const privateKey = process.env.FIREBASE_PRIVATE_KEY
+    ? process.env.FIREBASE_PRIVATE_KEY
+        .replace(/^"|"$/g, "")
+        .replace(/\\n/g, "\n")
+    : "";
+
+  if (!projectId || !clientEmail || !privateKey) {
+    throw new Error(
+      "Variáveis Firebase ausentes. Configure FIREBASE_SERVICE_ACCOUNT_BASE64 na Vercel."
+    );
+  }
+
+  return {
+    projectId,
+    clientEmail,
+    privateKey
+  };
 }
 
-if (!clientEmail) {
-  throw new Error("FIREBASE_CLIENT_EMAIL não configurado na Vercel.");
-}
-
-if (!privateKey) {
-  throw new Error("FIREBASE_PRIVATE_KEY não configurado na Vercel.");
-}
+const serviceAccount = getServiceAccount();
 
 const app = getApps().length
   ? getApps()[0]
   : initializeApp({
-      credential: cert({
-        projectId,
-        clientEmail,
-        privateKey
-      })
+      credential: cert(serviceAccount)
     });
 
 export const auth = getAuth(app);
@@ -51,8 +67,7 @@ export async function requireAdminFromToken(req) {
   const idToken = authHeader.replace("Bearer ", "").trim();
 
   const decoded = await auth.verifyIdToken(idToken);
-  const userRef = db.collection("users").doc(decoded.uid);
-  const userSnap = await userRef.get();
+  const userSnap = await db.collection("users").doc(decoded.uid).get();
 
   if (!userSnap.exists) {
     const error = new Error("Usuário não encontrado no Firestore.");
