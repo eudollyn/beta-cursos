@@ -32,3 +32,51 @@ const app = getApps().length
 
 export const auth = getAuth(app);
 export const db = getFirestore(app);
+
+export function json(res, statusCode, payload) {
+  res.statusCode = statusCode;
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  return res.end(JSON.stringify(payload));
+}
+
+export async function requireAdminFromToken(req) {
+  const authHeader = req.headers.authorization || req.headers.Authorization || "";
+
+  if (!authHeader.startsWith("Bearer ")) {
+    const error = new Error("Token de autenticação ausente.");
+    error.statusCode = 401;
+    throw error;
+  }
+
+  const idToken = authHeader.replace("Bearer ", "").trim();
+
+  const decoded = await auth.verifyIdToken(idToken);
+  const userRef = db.collection("users").doc(decoded.uid);
+  const userSnap = await userRef.get();
+
+  if (!userSnap.exists) {
+    const error = new Error("Usuário não encontrado no Firestore.");
+    error.statusCode = 403;
+    throw error;
+  }
+
+  const user = userSnap.data();
+
+  if (user.status !== "ativo") {
+    const error = new Error("Usuário bloqueado ou inativo.");
+    error.statusCode = 403;
+    throw error;
+  }
+
+  if (user.role !== "admin") {
+    const error = new Error("Acesso administrativo negado.");
+    error.statusCode = 403;
+    throw error;
+  }
+
+  return {
+    uid: decoded.uid,
+    email: decoded.email,
+    ...user
+  };
+}
