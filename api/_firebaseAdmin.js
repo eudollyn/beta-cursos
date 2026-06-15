@@ -1,46 +1,34 @@
-import admin from 'firebase-admin';
+import { initializeApp, cert, getApps } from "firebase-admin/app";
+import { getAuth } from "firebase-admin/auth";
+import { getFirestore } from "firebase-admin/firestore";
 
-function privateKey() {
-  const key = process.env.FIREBASE_PRIVATE_KEY || '';
-  return key.replace(/\\n/g, '\n');
+const projectId = process.env.FIREBASE_PROJECT_ID;
+const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+const privateKey = process.env.FIREBASE_PRIVATE_KEY
+  ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n")
+  : "";
+
+if (!projectId) {
+  throw new Error("FIREBASE_PROJECT_ID não configurado na Vercel.");
 }
 
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey: privateKey()
-    })
-  });
+if (!clientEmail) {
+  throw new Error("FIREBASE_CLIENT_EMAIL não configurado na Vercel.");
 }
 
-export { admin };
-
-export async function requireAdminFromToken(idToken) {
-  if (!idToken) {
-    const error = new Error('Token de autenticação ausente.');
-    error.status = 401;
-    throw error;
-  }
-  const decoded = await admin.auth().verifyIdToken(idToken);
-  const snap = await admin.firestore().collection('users').doc(decoded.uid).get();
-  const profile = snap.exists ? snap.data() : null;
-  if (!profile || profile.role !== 'admin' || profile.status !== 'ativo') {
-    const error = new Error('Acesso administrativo negado.');
-    error.status = 403;
-    throw error;
-  }
-  return { uid: decoded.uid, profile };
+if (!privateKey) {
+  throw new Error("FIREBASE_PRIVATE_KEY não configurado na Vercel.");
 }
 
-export async function requireAdminFromRequest(req) {
-  const header = req.headers.authorization || req.headers.Authorization || '';
-  const idToken = header.startsWith('Bearer ') ? header.slice(7) : '';
-  return requireAdminFromToken(idToken);
-}
+const app = getApps().length
+  ? getApps()[0]
+  : initializeApp({
+      credential: cert({
+        projectId,
+        clientEmail,
+        privateKey
+      })
+    });
 
-export function json(res, status, data) {
-  res.status(status).setHeader('Content-Type', 'application/json; charset=utf-8');
-  res.end(JSON.stringify(data));
-}
+export const auth = getAuth(app);
+export const db = getFirestore(app);
