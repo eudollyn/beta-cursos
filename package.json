@@ -12,8 +12,8 @@
     "firebase-admin": "latest"
   },
   "overrides": {
-  "jose": "4.15.5"
-}
+    "jose": "4.15.5"
+  },
   "devDependencies": {
     "vercel": "latest"
   }
