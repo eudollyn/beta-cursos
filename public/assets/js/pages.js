@@ -45,87 +45,141 @@ async function initPlatformPage() {
     el.textContent = (user.name || 'aluno').split(' ')[0];
   });
 
-  const [modules, allLessons, progressMap] = await Promise.all([
-    getPublishedModules(),
-    getModuleLessons('', false),
-    getProgressMap()
-  ]);
-
-  const publishedLessons = allLessons.filter(lesson => {
-    return lesson.status === 'publicado';
-  });
-
   const target = document.querySelector('#modulesList');
   if (!target) return;
 
-  target.innerHTML = modules.map(module => {
-    const lessons = publishedLessons
-      .filter(lesson => lesson.moduleId === module.id)
+  try {
+    const [modulesSnap, lessonsSnap, progressMap] = await Promise.all([
+      db.collection('modules').get(),
+      db.collection('lessons').where('status', '==', 'publicado').get(),
+      getProgressMap().catch(() => new Map())
+    ]);
+
+    const allModules = modulesSnap.docs
+      .map(docWithId)
       .sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
 
-    const progress = moduleProgressFromLessons(progressMap, lessons);
+    const publishedLessons = lessonsSnap.docs
+      .map(docWithId)
+      .sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
 
-    return `
-      <article class="module-card">
-        <span class="badge">Módulo ${escapeHtml(module.order || '')}</span>
+    const modules = allModules.filter(module => {
+      const hasPublishedLesson = publishedLessons.some(lesson => lesson.moduleId === module.id);
+      return module.status === 'publicado' || hasPublishedLesson;
+    });
 
-        <div>
-          <h3>${escapeHtml(module.title)}</h3>
-          <p>${escapeHtml(module.description || '')}</p>
+    if (!modules.length && !publishedLessons.length) {
+      target.innerHTML = `
+        <div class="panel">
+          <h2>Nenhum módulo publicado.</h2>
+          <p>Assim que a administração liberar o conteúdo, ele aparecerá aqui.</p>
         </div>
+      `;
 
-        <div class="progressbar" aria-label="Progresso">
-          <span style="width:${progress}%"></span>
-        </div>
+      const progressEl = document.querySelector('#generalProgress');
+      if (progressEl) progressEl.textContent = '0%';
 
-        <div class="lesson-list">
-          ${
-            lessons.length
-              ? lessons.map(lesson => `
-                  <div class="lesson-item">
-                    <div>
-                      <h4>${isLessonDoneFromMap(progressMap, lesson.id) ? '✓ ' : ''}${escapeHtml(lesson.title)}</h4>
-                      <p>${escapeHtml(lesson.duration || 'Aula')} · ${escapeHtml(lesson.description || '')}</p>
+      const progressBar = document.querySelector('#generalProgressBar');
+      if (progressBar) progressBar.style.width = '0%';
+
+      return;
+    }
+
+    if (!modules.length && publishedLessons.length) {
+      target.innerHTML = `
+        <article class="module-card">
+          <span class="badge">Aulas disponíveis</span>
+
+          <div>
+            <h3>Curso Beta</h3>
+            <p>Aulas publicadas sem módulo vinculado corretamente.</p>
+          </div>
+
+          <div class="progressbar" aria-label="Progresso">
+            <span style="width:0%"></span>
+          </div>
+
+          <div class="lesson-list">
+            ${publishedLessons.map(lesson => `
+              <div class="lesson-item">
+                <div>
+                  <h4>${isLessonDoneFromMap(progressMap, lesson.id) ? '✓ ' : ''}${escapeHtml(lesson.title)}</h4>
+                  <p>${escapeHtml(lesson.duration || 'Aula')} · ${escapeHtml(lesson.description || '')}</p>
+                </div>
+
+                <a class="btn small secondary" href="aula.html?id=${lesson.id}">
+                  Assistir
+                </a>
+              </div>
+            `).join('')}
+          </div>
+        </article>
+      `;
+
+      return;
+    }
+
+    target.innerHTML = modules.map(module => {
+      const lessons = publishedLessons
+        .filter(lesson => lesson.moduleId === module.id)
+        .sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
+
+      const progress = moduleProgressFromLessons(progressMap, lessons);
+
+      return `
+        <article class="module-card">
+          <span class="badge">Módulo ${escapeHtml(module.order || '')}</span>
+
+          <div>
+            <h3>${escapeHtml(module.title || 'Módulo sem título')}</h3>
+            <p>${escapeHtml(module.description || '')}</p>
+          </div>
+
+          <div class="progressbar" aria-label="Progresso">
+            <span style="width:${progress}%"></span>
+          </div>
+
+          <div class="lesson-list">
+            ${
+              lessons.length
+                ? lessons.map(lesson => `
+                    <div class="lesson-item">
+                      <div>
+                        <h4>${isLessonDoneFromMap(progressMap, lesson.id) ? '✓ ' : ''}${escapeHtml(lesson.title)}</h4>
+                        <p>${escapeHtml(lesson.duration || 'Aula')} · ${escapeHtml(lesson.description || '')}</p>
+                      </div>
+
+                      <a class="btn small secondary" href="aula.html?id=${lesson.id}">
+                        Assistir
+                      </a>
                     </div>
+                  `).join('')
+                : '<p class="helper">As aulas deste módulo serão disponibilizadas em breve.</p>'
+            }
+          </div>
+        </article>
+      `;
+    }).join('');
 
-                    <a class="btn small secondary" href="aula.html?id=${lesson.id}">
-                      Assistir
-                    </a>
-                  </div>
-                `).join('')
-              : '<p class="helper">As aulas deste módulo serão disponibilizadas em breve.</p>'
-          }
-        </div>
-      </article>
+    const totalLessons = publishedLessons.length;
+    const totalDone = publishedLessons.filter(l => isLessonDoneFromMap(progressMap, l.id)).length;
+    const pct = totalLessons ? Math.round((totalDone / totalLessons) * 100) : 0;
+
+    const progressEl = document.querySelector('#generalProgress');
+    if (progressEl) progressEl.textContent = `${pct}%`;
+
+    const progressBar = document.querySelector('#generalProgressBar');
+    if (progressBar) progressBar.style.width = `${pct}%`;
+  } catch (error) {
+    console.error('PLATFORM_RENDER_ERROR:', error);
+
+    target.innerHTML = `
+      <div class="panel">
+        <h2>Erro ao carregar módulos</h2>
+        <p>${escapeHtml(error.message || 'Não foi possível buscar os dados do curso.')}</p>
+      </div>
     `;
-  }).join('') || `
-    <div class="panel">
-      <h2>Nenhum módulo publicado.</h2>
-      <p>Assim que a administração liberar o conteúdo, ele aparecerá aqui.</p>
-    </div>
-  `;
-
-  const totalLessons = publishedLessons.length;
-  const totalDone = publishedLessons.filter(l => isLessonDoneFromMap(progressMap, l.id)).length;
-  const pct = totalLessons ? Math.round((totalDone / totalLessons) * 100) : 0;
-
-  const progressEl = document.querySelector('#generalProgress');
-  if (progressEl) progressEl.textContent = `${pct}%`;
-
-  const progressBar = document.querySelector('#generalProgressBar');
-  if (progressBar) progressBar.style.width = `${pct}%`;
-}
-
-  const allLessons = Object.values(moduleLessons).flat();
-  const totalLessons = allLessons.length;
-  const totalDone = allLessons.filter(l => isLessonDoneFromMap(progressMap, l.id)).length;
-  const pct = totalLessons ? Math.round((totalDone / totalLessons) * 100) : 0;
-
-  const progressEl = document.querySelector('#generalProgress');
-  if (progressEl) progressEl.textContent = `${pct}%`;
-
-  const progressBar = document.querySelector('#generalProgressBar');
-  if (progressBar) progressBar.style.width = `${pct}%`;
+  }
 }
 
 async function initLessonPage() {
