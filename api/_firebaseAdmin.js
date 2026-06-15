@@ -3,10 +3,14 @@ import { getAuth } from "firebase-admin/auth";
 import { getFirestore } from "firebase-admin/firestore";
 
 function getServiceAccount() {
-  if (process.env.FIREBASE_SERVICE_ACCOUNT_BASE64) {
-    const serviceAccountJson = Buffer
-      .from(process.env.FIREBASE_SERVICE_ACCOUNT_BASE64, "base64")
-      .toString("utf8");
+  const base64OrJson = process.env.FIREBASE_SERVICE_ACCOUNT_BASE64;
+
+  if (base64OrJson) {
+    const raw = base64OrJson.trim().replace(/^"|"$/g, "");
+
+    const serviceAccountJson = raw.startsWith("{")
+      ? raw
+      : Buffer.from(raw, "base64").toString("utf8");
 
     const serviceAccount = JSON.parse(serviceAccountJson);
 
@@ -21,6 +25,7 @@ function getServiceAccount() {
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
   const privateKey = process.env.FIREBASE_PRIVATE_KEY
     ? process.env.FIREBASE_PRIVATE_KEY
+        .trim()
         .replace(/^"|"$/g, "")
         .replace(/\\n/g, "\n")
     : "";
