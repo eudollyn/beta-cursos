@@ -1,25 +1,17 @@
 import { handleUpload } from "@vercel/blob/client";
 import { requireAdminByIdToken } from "./_firebaseAdmin.js";
 
-export default async function handler(request) {
-  if (request.method && request.method !== "POST") {
-    return Response.json(
-      { error: "Método não permitido." },
-      { status: 405 }
-    );
-  }
-
+export async function POST(request) {
   try {
-    if (!process.env.BLOB_READ_WRITE_TOKEN) {
-      throw new Error("BLOB_READ_WRITE_TOKEN não configurado na Vercel.");
-    }
-
     const body = await request.json();
 
     const jsonResponse = await handleUpload({
       body,
       request,
-      token: process.env.BLOB_READ_WRITE_TOKEN,
+
+      ...(process.env.BLOB_READ_WRITE_TOKEN
+        ? { token: process.env.BLOB_READ_WRITE_TOKEN }
+        : {}),
 
       onBeforeGenerateToken: async (pathname, clientPayload) => {
         let payload = {};
@@ -30,7 +22,7 @@ export default async function handler(request) {
           payload = {};
         }
 
-        const idToken = payload.idToken || clientPayload;
+        const idToken = payload.idToken;
 
         await requireAdminByIdToken(idToken);
 
@@ -40,7 +32,8 @@ export default async function handler(request) {
             "video/webm",
             "video/quicktime",
             "video/x-matroska",
-            "video/avi"
+            "video/avi",
+            "video/x-msvideo"
           ],
           addRandomSuffix: true,
           tokenPayload: JSON.stringify({
@@ -68,7 +61,22 @@ export default async function handler(request) {
         error: error.message || "Erro ao gerar token de upload.",
         code: error.code || null
       },
-      { status: error.statusCode || 400 }
+      {
+        status: error.statusCode || 400
+      }
     );
   }
+}
+
+export function GET() {
+  return Response.json(
+    {
+      ok: true,
+      route: "/api/blob-upload",
+      message: "Rota de upload ativa. Use POST para enviar vídeos."
+    },
+    {
+      status: 200
+    }
+  );
 }
