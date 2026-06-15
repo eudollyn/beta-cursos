@@ -1,0 +1,5 @@
+<svg width="190" height="72" viewBox="0 0 190 72" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect x="2" y="2" width="68" height="68" rx="18" fill="#1B1B1B" stroke="#BF531A" stroke-width="2"/>
+  <path d="M37 13v45M24 32h26" stroke="#F5E7D7" stroke-width="8" stroke-linecap="square"/>
+  <text x="84" y="51" font-family="Helvetica Neue, Arial, sans-serif" font-size="42" font-weight="500" letter-spacing="-3" fill="#F5E7D7">Beta</text>
+</svg>

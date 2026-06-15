@@ -1,0 +1,49 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function activeUser() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && userDoc().data.status == 'ativo';
+    }
+
+    function adminUser() {
+      return activeUser() && userDoc().data.role == 'admin';
+    }
+
+    match /users/{userId} {
+      allow read: if adminUser() || (activeUser() && request.auth.uid == userId);
+      allow update: if adminUser();
+      allow create, delete: if false;
+    }
+
+    match /modules/{moduleId} {
+      allow read: if activeUser();
+      allow create, update, delete: if adminUser();
+    }
+
+    match /lessons/{lessonId} {
+      allow read: if activeUser();
+      allow create, update, delete: if adminUser();
+    }
+
+    match /progress/{progressId} {
+      allow read: if adminUser() || (activeUser() && resource.data.userId == request.auth.uid);
+      allow create, update: if activeUser()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.lessonId is string
+        && request.resource.data.done is bool;
+      allow delete: if adminUser();
+    }
+  }
+}
