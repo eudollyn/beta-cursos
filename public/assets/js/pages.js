@@ -870,7 +870,7 @@ function insertBetaPhraseCarousel() {
 }
 
 function setupRevealUpCards() {
-  const selector = '.card, .meta-card, .panel, .step, .module-card, .lesson-item, .auth-card, .visual-card';
+  const selector = '.card, .meta-card, .panel, .step, .module-card, .auth-card, .visual-card';
   const reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const items = () => Array.from(document.querySelectorAll(selector));
 
