@@ -45,22 +45,24 @@ async function initPlatformPage() {
     el.textContent = (user.name || 'aluno').split(' ')[0];
   });
 
-  const [modules, progressMap] = await Promise.all([
+  const [modules, allLessons, progressMap] = await Promise.all([
     getPublishedModules(),
+    getModuleLessons('', false),
     getProgressMap()
   ]);
 
-  const moduleLessons = {};
-
-  for (const module of modules) {
-    moduleLessons[module.id] = await getModuleLessons(module.id);
-  }
+  const publishedLessons = allLessons.filter(lesson => {
+    return lesson.status === 'publicado';
+  });
 
   const target = document.querySelector('#modulesList');
   if (!target) return;
 
   target.innerHTML = modules.map(module => {
-    const lessons = moduleLessons[module.id] || [];
+    const lessons = publishedLessons
+      .filter(lesson => lesson.moduleId === module.id)
+      .sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
+
     const progress = moduleProgressFromLessons(progressMap, lessons);
 
     return `
@@ -69,7 +71,7 @@ async function initPlatformPage() {
 
         <div>
           <h3>${escapeHtml(module.title)}</h3>
-          <p>${escapeHtml(module.description)}</p>
+          <p>${escapeHtml(module.description || '')}</p>
         </div>
 
         <div class="progressbar" aria-label="Progresso">
@@ -78,16 +80,20 @@ async function initPlatformPage() {
 
         <div class="lesson-list">
           ${
-            lessons.map(lesson => `
-              <div class="lesson-item">
-                <div>
-                  <h4>${isLessonDoneFromMap(progressMap, lesson.id) ? '✓ ' : ''}${escapeHtml(lesson.title)}</h4>
-                  <p>${escapeHtml(lesson.duration || 'Aula')} · ${escapeHtml(lesson.description || '')}</p>
-                </div>
+            lessons.length
+              ? lessons.map(lesson => `
+                  <div class="lesson-item">
+                    <div>
+                      <h4>${isLessonDoneFromMap(progressMap, lesson.id) ? '✓ ' : ''}${escapeHtml(lesson.title)}</h4>
+                      <p>${escapeHtml(lesson.duration || 'Aula')} · ${escapeHtml(lesson.description || '')}</p>
+                    </div>
 
-                <a class="btn small secondary" href="aula.html?id=${lesson.id}">Assistir</a>
-              </div>
-            `).join('') || '<p class="helper">As aulas deste módulo serão disponibilizadas em breve.</p>'
+                    <a class="btn small secondary" href="aula.html?id=${lesson.id}">
+                      Assistir
+                    </a>
+                  </div>
+                `).join('')
+              : '<p class="helper">As aulas deste módulo serão disponibilizadas em breve.</p>'
           }
         </div>
       </article>
@@ -98,6 +104,17 @@ async function initPlatformPage() {
       <p>Assim que a administração liberar o conteúdo, ele aparecerá aqui.</p>
     </div>
   `;
+
+  const totalLessons = publishedLessons.length;
+  const totalDone = publishedLessons.filter(l => isLessonDoneFromMap(progressMap, l.id)).length;
+  const pct = totalLessons ? Math.round((totalDone / totalLessons) * 100) : 0;
+
+  const progressEl = document.querySelector('#generalProgress');
+  if (progressEl) progressEl.textContent = `${pct}%`;
+
+  const progressBar = document.querySelector('#generalProgressBar');
+  if (progressBar) progressBar.style.width = `${pct}%`;
+}
 
   const allLessons = Object.values(moduleLessons).flat();
   const totalLessons = allLessons.length;
