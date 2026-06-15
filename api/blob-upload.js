@@ -1,36 +1,74 @@
-import { handleUpload } from '@vercel/blob/client';
-import { requireAdminFromToken, json } from './_firebaseAdmin.js';
+import { handleUpload } from "@vercel/blob/client";
+import { requireAdminByIdToken } from "./_firebaseAdmin.js";
 
-export default async function handler(req, res) {
-  if (req.method !== 'POST') return json(res, 405, { ok:false, message:'Método não permitido.' });
+export default async function handler(request) {
+  if (request.method && request.method !== "POST") {
+    return Response.json(
+      { error: "Método não permitido." },
+      { status: 405 }
+    );
+  }
+
   try {
-    const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+    if (!process.env.BLOB_READ_WRITE_TOKEN) {
+      throw new Error("BLOB_READ_WRITE_TOKEN não configurado na Vercel.");
+    }
+
+    const body = await request.json();
+
     const jsonResponse = await handleUpload({
       body,
-      request: req,
+      request,
+      token: process.env.BLOB_READ_WRITE_TOKEN,
+
       onBeforeGenerateToken: async (pathname, clientPayload) => {
-        const payload = clientPayload ? JSON.parse(clientPayload) : {};
-        await requireAdminFromToken(payload.idToken);
-        if (!payload.lessonId) throw new Error('Aula não informada para o upload.');
+        let payload = {};
+
+        try {
+          payload = clientPayload ? JSON.parse(clientPayload) : {};
+        } catch {
+          payload = {};
+        }
+
+        const idToken = payload.idToken || clientPayload;
+
+        await requireAdminByIdToken(idToken);
+
         return {
           allowedContentTypes: [
-            'video/mp4',
-            'video/webm',
-            'video/quicktime',
-            'video/x-matroska',
-            'video/x-msvideo',
-            'application/octet-stream'
+            "video/mp4",
+            "video/webm",
+            "video/quicktime",
+            "video/x-matroska",
+            "video/avi"
           ],
           addRandomSuffix: true,
-          tokenPayload: JSON.stringify({ lessonId: payload.lessonId })
+          tokenPayload: JSON.stringify({
+            lessonId: payload.lessonId || "",
+            pathname
+          })
         };
       },
+
       onUploadCompleted: async ({ blob, tokenPayload }) => {
-        console.log('Beta Cursos: vídeo enviado', blob.url, tokenPayload);
+        console.log("Upload concluído:", {
+          url: blob.url,
+          pathname: blob.pathname,
+          tokenPayload
+        });
       }
     });
-    return json(res, 200, jsonResponse);
-  } catch (err) {
-    return json(res, err.status || 400, { ok:false, message:err.message || 'Erro ao enviar vídeo.' });
+
+    return Response.json(jsonResponse);
+  } catch (error) {
+    console.error("BLOB_UPLOAD_ERROR:", error);
+
+    return Response.json(
+      {
+        error: error.message || "Erro ao gerar token de upload.",
+        code: error.code || null
+      },
+      { status: error.statusCode || 400 }
+    );
   }
 }
