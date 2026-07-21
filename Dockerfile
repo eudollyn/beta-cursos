@@ -11,8 +11,7 @@ RUN corepack enable
 
 ADD beta-cursos-deploy.tar.gz /app/
 
-RUN --mount=type=cache,id=beta-cursos-pnpm,target=/pnpm/store \
-    pnpm install --no-frozen-lockfile
+RUN pnpm install --no-frozen-lockfile
 
 RUN pnpm build
 RUN pnpm prune --prod
