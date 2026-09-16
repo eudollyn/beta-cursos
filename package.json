@@ -12,9 +12,10 @@
     "dev:static": "node dev-server.mjs",
     "start": "node railway/server.mjs",
     "migrate": "node --env-file-if-exists=.env railway/migrate.mjs",
+    "restore": "node --env-file-if-exists=.env railway/restore.mjs",
     "build": "node build.mjs",
     "package:s3": "pnpm build && node s3-package.mjs",
-    "check:syntax": "node --check config.js && node --check app.js && node --check data.js && node --check catalog.js && node --check admin.js && node --check worker.mjs && node --check railway/auth-crypto.mjs && node --check railway/application-api.mjs && node --check railway/config.mjs && node --check railway/db.mjs && node --check railway/email.mjs && node --check railway/full-backup.mjs && node --check railway/migrate.mjs && node --check railway/seed.mjs && node --check railway/server.mjs && node --check railway/storage.mjs",
+    "check:syntax": "node --check config.js && node --check app.js && node --check data.js && node --check catalog.js && node --check admin.js && node --check worker.mjs && node --check railway/auth-crypto.mjs && node --check railway/application-api.mjs && node --check railway/config.mjs && node --check railway/db.mjs && node --check railway/email.mjs && node --check railway/full-backup.mjs && node --check railway/migrate.mjs && node --check railway/restore.mjs && node --check railway/seed.mjs && node --check railway/server.mjs && node --check railway/storage.mjs",
     "check": "pnpm check:syntax && node --test \"tests/*.test.mjs\"",
     "test": "pnpm build && pnpm check"
   },

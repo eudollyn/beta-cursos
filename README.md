@@ -45,6 +45,8 @@ pnpm dev:static
 
 ## Painel administrativo
 
+O procedimento seguro para restaurar um backup ou migrar SQLite/filesystem para PostgreSQL/S3 está em [docs/RESTAURACAO-E-MIGRACAO.md](docs/RESTAURACAO-E-MIGRACAO.md). O comando `pnpm restore --file <backup>` executa somente uma simulação; a gravação exige `--apply` explícito.
+
 Depois de entrar com uma conta autorizada, abra **Administração**. Em ambiente hospedado, o proprietário inicial é exclusivamente o e-mail definido em `BOOTSTRAP_OWNER_EMAIL`, mas a função `owner` só é concedida depois que a pessoa abre o link recebido nesse endereço e define a própria senha. Um visitante não consegue tomar a conta cadastrando primeiro uma senha nem enviando cabeçalhos pelo navegador.
 
 Para publicar, cada lição precisa ter:

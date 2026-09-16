@@ -14,6 +14,7 @@ const BACKUP_TABLES = Object.freeze([
   'app_quiz_attempts',
   'app_course_completions',
   'app_video_progress',
+  'app_enrollment_grants',
 ]);
 
 const EPHEMERAL_TABLES = Object.freeze(['app_sessions', 'app_auth_tokens']);
