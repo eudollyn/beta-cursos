@@ -2000,3 +2000,43 @@ test('rastreamento soma trechos contínuos e só conclui após o fim real do ví
   assert.equal(body.tracking.watchedSeconds, 95);
   assert.equal(body.tracking.lastPositionSeconds, 100);
 });
+
+test('P1-04: fases pastorais e liberações excepcionais são decididas pelo servidor', async () => {
+  const DB = createDatabase();
+  const course = JSON.parse(DB.database.prepare('SELECT data_json FROM courses WHERE id = ?').get('jornada-lidere').data_json);
+  course.accessPolicy = { mode: 'restricted', requiredPastoralPhase: 'Engajar', prerequisiteCourseIds: [], prerequisiteMode: 'all', catalogVisibility: 'show_locked' };
+  DB.database.prepare('UPDATE courses SET data_json = ? WHERE id = ?').run(JSON.stringify(course), course.id);
+  const owner = await register(DB, { email: 'owner-fases@example.com' });
+  const student = await register(DB, { email: 'aluno-fases@example.com' });
+  DB.database.prepare("UPDATE app_users SET role = 'owner' WHERE email = ?").run('owner-fases@example.com');
+
+  let response = await handleApplicationApi(request('/api/courses', { cookie: student.cookie }), { DB, config: baseConfig });
+  let catalog = await payload(response);
+  assert.equal(catalog.courses[0].access.reasonCode, 'pastoral_phase_unassigned');
+
+  response = await handleApplicationApi(request(`/api/admin/students/${student.body.user.id}/pastoral-phase`, {
+    method: 'PATCH', cookie: owner.cookie, body: { pastoralPhase: 'Atrair' },
+  }), { DB, config: baseConfig });
+  assert.equal(response.status, 200);
+  response = await handleApplicationApi(request('/api/courses', { cookie: student.cookie }), { DB, config: baseConfig });
+  catalog = await payload(response);
+  assert.equal(catalog.courses[0].access.reasonCode, 'pastoral_phase_required');
+
+  response = await handleApplicationApi(request(`/api/admin/students/${student.body.user.id}/pastoral-grants`, {
+    method: 'POST', cookie: owner.cookie,
+    body: { courseId: 'jornada-lidere', reason: 'Aprovado pela liderança para este curso.' },
+  }), { DB, config: baseConfig });
+  assert.equal(response.status, 201);
+  const granted = await payload(response);
+  response = await handleApplicationApi(request('/api/courses', { cookie: student.cookie }), { DB, config: baseConfig });
+  catalog = await payload(response);
+  assert.equal(catalog.courses[0].access.allowed, true);
+  assert.equal(catalog.courses[0].access.pastoralGrant, true);
+
+  response = await handleApplicationApi(request(`/api/admin/students/${student.body.user.id}/pastoral-grants/${granted.grant.id}/revoke`, {
+    method: 'POST', cookie: owner.cookie, body: {},
+  }), { DB, config: baseConfig });
+  assert.equal(response.status, 200);
+  assert.equal(DB.database.prepare('SELECT status FROM app_enrollments WHERE user_id = ? AND course_id = ?')
+    .get(student.body.user.id, 'jornada-lidere').status, 'suspended');
+});

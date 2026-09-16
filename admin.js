@@ -15,6 +15,7 @@
   };
   const LEVELS = ['Iniciante', 'Intermediário', 'Avançado'];
   const COURSE_CATEGORIES = ['Alcançar', 'Adorar', 'Relacionar', 'Discipular', 'Engajar'];
+  const PASTORAL_PHASES = ['Atrair', 'Adorar', 'Relacionar', 'Discipular', 'Engajar'];
   const VIDEO_PROVIDERS = {
     youtube: 'YouTube',
     vimeo: 'Vimeo',
@@ -282,6 +283,8 @@
       mode,
       prerequisiteCourseIds: mode === 'restricted' ? prerequisiteCourseIds : [],
       prerequisiteMode: 'all',
+      requiredPastoralPhase: mode === 'restricted' && PASTORAL_PHASES.includes(policy.requiredPastoralPhase)
+        ? policy.requiredPastoralPhase : null,
       catalogVisibility: policy.catalogVisibility === 'hidden_until_eligible'
         ? 'hidden_until_eligible'
         : 'show_locked',
@@ -377,7 +380,7 @@
       status: 'draft',
       level: 'Iniciante',
       category: 'Discipular',
-      accessPolicy: { mode: 'open', prerequisiteCourseIds: [], prerequisiteMode: 'all', catalogVisibility: 'show_locked' },
+      accessPolicy: { mode: 'open', prerequisiteCourseIds: [], prerequisiteMode: 'all', requiredPastoralPhase: null, catalogVisibility: 'show_locked' },
       pricing: { fullPrice: 0, memberDiscount: 0, discountPercent: 0 },
       modules: [createBlankModule(0)],
     });
@@ -558,6 +561,19 @@
     },
     async reactivateStudent(id) {
       return apiRequest(`/api/admin/students/${encodeURIComponent(id)}/reactivate`, { method: 'POST' });
+    },
+    async updateStudentPastoralPhase(id, pastoralPhase) {
+      return apiRequest(`/api/admin/students/${encodeURIComponent(id)}/pastoral-phase`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pastoralPhase }),
+      });
+    },
+    async grantStudentPastoralCourse(id, grant) {
+      return apiRequest(`/api/admin/students/${encodeURIComponent(id)}/pastoral-grants`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(grant),
+      });
+    },
+    async revokeStudentPastoralCourse(id, grantId) {
+      return apiRequest(`/api/admin/students/${encodeURIComponent(id)}/pastoral-grants/${encodeURIComponent(grantId)}/revoke`, { method: 'POST' });
     },
     async deleteStudent(id, confirmEmail) {
       return apiRequest(`/api/admin/students/${encodeURIComponent(id)}`, {
@@ -838,7 +854,12 @@
     if (!COURSE_CATEGORIES.includes(course.category)) add('category', 'Selecione uma categoria válida.');
     if (course.accessPolicy.mode === 'restricted') {
       const prerequisites = course.accessPolicy.prerequisiteCourseIds;
-      if (!prerequisites.length) add('accessPolicy.prerequisiteCourseIds', 'Selecione ao menos um curso como pré-requisito.');
+      if (!prerequisites.length && !course.accessPolicy.requiredPastoralPhase) {
+        add('accessPolicy', 'Defina uma fase pastoral, ao menos um pré-requisito, ou deixe o curso aberto.');
+      }
+      if (course.accessPolicy.requiredPastoralPhase && !PASTORAL_PHASES.includes(course.accessPolicy.requiredPastoralPhase)) {
+        add('accessPolicy.requiredPastoralPhase', 'Selecione uma fase pastoral válida.');
+      }
       if (prerequisites.includes(course.id)) add('accessPolicy.prerequisiteCourseIds', 'Um curso não pode exigir a própria conclusão.');
       const knownIds = new Set(state.courses.map(item => item.id));
       if (prerequisites.some(id => !knownIds.has(id))) {
@@ -1256,16 +1277,20 @@
       <div class="ba-section-heading"><span class="ba-eyebrow">Sequência de formação</span><h2>Pré-requisitos</h2><p>Defina quais cursos precisam ser concluídos antes deste conteúdo.</p></div>
       <div class="ba-form-grid">
         ${selectField('Regra de acesso', 'accessPolicy.mode', course.accessPolicy.mode, [
-          { value: 'open', label: 'Sem pré-requisito' },
-          { value: 'restricted', label: 'Exigir conclusão de outros cursos' },
+          { value: 'open', label: 'Aberto para todos' },
+          { value: 'restricted', label: 'Acesso pastoral ou pré-requisitos — Exigir conclusão de outros cursos quando configurado' },
         ])}
+        ${selectField('Fase pastoral mínima', 'accessPolicy.requiredPastoralPhase', course.accessPolicy.requiredPastoralPhase || '', [
+          { value: '', label: 'Não exigir fase específica' },
+          ...PASTORAL_PHASES.map(value => ({ value, label: value })),
+        ], { dataAttr: restricted ? '' : 'disabled aria-disabled="true"' })}
         ${selectField('Exibição no catálogo', 'accessPolicy.catalogVisibility', course.accessPolicy.catalogVisibility, [
           { value: 'show_locked', label: 'Mostrar bloqueado e explicar os requisitos' },
           { value: 'hidden_until_eligible', label: 'Ocultar até concluir os requisitos' },
         ], { dataAttr: restricted ? '' : 'disabled aria-disabled="true"' })}
       </div>
       <fieldset class="ba-prerequisites" ${restricted ? '' : 'disabled'}>
-        <legend>Cursos obrigatórios</legend>
+        <legend>Cursos obrigatórios (todos precisam ser concluídos)</legend>
         ${otherCourses.length
           ? `<div class="ba-prerequisite-grid">${otherCourses.map(item => `<label class="ba-prerequisite-option"><input type="checkbox" data-course-prerequisite value="${escapeAttr(item.id)}" ${course.accessPolicy.prerequisiteCourseIds.includes(item.id) ? 'checked' : ''}><span><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.category)} · ${STATUS_LABELS[item.status]}</small></span></label>`).join('')}</div>`
           : '<p class="ba-muted">Crie outro curso para configurá-lo como pré-requisito.</p>'}
@@ -1612,6 +1637,7 @@
   function studentProgressModal(payload) {
     const student = payload.student || {};
     const courses = Array.isArray(payload.courses) ? payload.courses : [];
+    const pastoralGrants = Array.isArray(payload.pastoralGrants) ? payload.pastoralGrants : [];
     const disabled = student.accountStatus === 'disabled';
     const managementButtons = canManageStudents()
       ? `${disabled ? `<button type="button" class="ba-button ba-button--primary" data-student-account-action="reactivate" data-student-id="${escapeAttr(student.id)}" data-student-email="${escapeAttr(student.email)}">Reativar acesso</button>` : `<button type="button" class="ba-button ba-button--ghost" data-student-account-action="deactivate" data-student-id="${escapeAttr(student.id)}" data-student-email="${escapeAttr(student.email)}">Desativar acesso</button>`}${canDeleteStudents() ? `<button type="button" class="ba-button ba-button--danger" data-student-account-action="delete" data-student-id="${escapeAttr(student.id)}" data-student-email="${escapeAttr(student.email)}">Excluir definitivamente</button>` : ''}`
@@ -1619,10 +1645,17 @@
     const managementDescription = canManageStudents()
       ? (disabled ? 'Matrículas, progresso e tentativas permanecem preservados.' : 'Desative temporariamente o acesso quando necessário.')
       : 'Seu acesso é somente para acompanhamento. Alterações de conta ficam com a administração.';
+    const pastoralControls = canManageStudents()
+      ? `<section class="ba-student-account-actions" aria-label="Acompanhamento pastoral"><div><span class="ba-eyebrow">Jornada pastoral</span><h3>Fase e liberações excepcionais</h3><p>A fase é alterada manualmente e a conclusão de cursos não muda esta informação automaticamente.</p></div>
+        <div class="ba-pastoral-controls"><label>Fase atual<select data-student-pastoral-phase>${selectOption('', student.pastoralPhase || '', 'Ainda não definida')}${PASTORAL_PHASES.map(phase => selectOption(phase, student.pastoralPhase || '', phase)).join('')}</select></label><button type="button" class="ba-button ba-button--ghost" data-action="save-student-pastoral-phase" data-student-id="${escapeAttr(student.id)}">Salvar fase</button></div>
+        <div class="ba-pastoral-controls"><label>Curso para liberar<select data-student-pastoral-course>${state.courses.filter(course => course.status !== 'archived').map(course => `<option value="${escapeAttr(course.id)}">${escapeHtml(course.title)}</option>`).join('')}</select></label><label>Motivo<input data-student-pastoral-reason maxlength="500" placeholder="Ex.: liberação aprovada pela liderança"></label><label>Expira em (opcional)<input data-student-pastoral-expiry type="datetime-local"></label><button type="button" class="ba-button ba-button--primary" data-action="grant-student-pastoral-course" data-student-id="${escapeAttr(student.id)}">Liberar curso</button></div>
+        ${pastoralGrants.length ? `<ul class="ba-pastoral-grants">${pastoralGrants.map(grant => `<li><div><strong>${escapeHtml(grant.courseTitle)}</strong><small>${escapeHtml(grant.reason)} · ${escapeHtml(grant.status)}${grant.expiresAt ? ` · expira ${escapeHtml(formatDateTime(grant.expiresAt))}` : ''}</small></div>${grant.status === 'active' ? `<button type="button" class="ba-link-button" data-action="revoke-student-pastoral-course" data-student-id="${escapeAttr(student.id)}" data-grant-id="${escapeAttr(grant.id)}">Revogar</button>` : ''}</li>`).join('')}</ul>` : '<p class="ba-muted">Nenhuma liberação excepcional registrada.</p>'}</section>`
+      : `<section class="ba-student-account-actions"><div><span class="ba-eyebrow">Jornada pastoral</span><h3>Fase atual: ${escapeHtml(student.pastoralPhase || 'Não definida')}</h3><p>Seu acesso é somente para acompanhamento.</p></div></section>`;
     return `<div class="ba-modal-backdrop" data-action="close-student-progress"></div><section class="ba-modal ba-modal--student" role="dialog" aria-modal="true" aria-labelledby="ba-student-modal-title" data-student-progress-modal>
       <header class="ba-student-modal__header"><div><span class="ba-eyebrow">Acompanhamento individual</span><h2 id="ba-student-modal-title">${escapeHtml(student.name || 'Aluno')}</h2><p>${escapeHtml(student.email || '')}</p>${disabled ? '<span class="ba-account-badge ba-account-badge--disabled">Acesso desativado</span>' : '<span class="ba-account-badge ba-account-badge--active">Acesso ativo</span>'}</div><button type="button" class="ba-icon-button" data-action="close-student-progress" aria-label="Fechar detalhes">×</button></header>
       <dl class="ba-student-profile"><div><dt>Cadastro</dt><dd>${formatDate(student.registeredAt)}</dd></div><div><dt>Último acesso</dt><dd>${formatDateTime(student.lastAccess)}</dd></div><div><dt>Cursos</dt><dd>${courses.length}</dd></div>${student.memberCode ? `<div><dt>Código de membro</dt><dd>${escapeHtml(student.memberCode)}</dd></div>` : ''}${disabled ? `<div><dt>Desativado em</dt><dd>${formatDateTime(student.disabledAt)}</dd></div>` : ''}</dl>
       <section class="ba-student-account-actions" aria-label="Gerenciamento da conta"><div><span class="ba-eyebrow">Acesso à plataforma</span><h3>${disabled ? 'Conta arquivada' : 'Conta ativa'}</h3><p>${managementDescription}</p></div><div class="ba-student-account-actions__buttons">${managementButtons}</div></section>
+      ${pastoralControls}
       <div class="ba-student-course-list">${courses.length ? courses.map(studentCourseDetail).join('') : emptyState('Nenhuma matrícula', 'Este aluno ainda não possui cursos vinculados.')}</div>
     </section>`;
   }
@@ -1709,6 +1742,42 @@
       }[action] || 'Conta atualizada.', 'success');
     } catch (error) {
       toast(error.message || 'Não foi possível alterar a conta do aluno.', 'error');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function manageStudentPastoralAccess(button) {
+    if (state.mode !== 'api' || !canManageStudents()) return;
+    const modal = button.closest('[data-student-progress-modal]');
+    const studentId = button.dataset.studentId;
+    const action = button.dataset.action;
+    setBusy(true);
+    try {
+      if (action === 'save-student-pastoral-phase') {
+        const phase = modal.querySelector('[data-student-pastoral-phase]')?.value || null;
+        await remoteAdapter.updateStudentPastoralPhase(studentId, phase);
+        toast(phase ? `Fase atualizada para ${phase}.` : 'Fase pastoral removida.', 'success');
+      } else if (action === 'grant-student-pastoral-course') {
+        const courseId = modal.querySelector('[data-student-pastoral-course]')?.value;
+        const reason = modal.querySelector('[data-student-pastoral-reason]')?.value || '';
+        const rawExpiry = modal.querySelector('[data-student-pastoral-expiry]')?.value || '';
+        if (!courseId || reason.trim().length < 3) throw new ApiError('Informe o curso e o motivo da liberação.', 422);
+        await remoteAdapter.grantStudentPastoralCourse(studentId, {
+          courseId, reason: reason.trim(), expiresAt: rawExpiry ? new Date(rawExpiry).toISOString() : null,
+        });
+        toast('Curso liberado excepcionalmente para este aluno.', 'success');
+      } else if (action === 'revoke-student-pastoral-course') {
+        const confirmed = await confirmDialog({ title: 'Revogar esta liberação?', message: 'O curso só permanecerá acessível se existir outra matrícula ou liberação válida.', confirmLabel: 'Revogar liberação', danger: true });
+        if (!confirmed) return;
+        await remoteAdapter.revokeStudentPastoralCourse(studentId, button.dataset.grantId);
+        toast('Liberação excepcional revogada.', 'success');
+      }
+      await refreshStudents();
+      await openStudentProgress(studentId);
+      render();
+    } catch (error) {
+      toast(error.message || 'Não foi possível atualizar o acesso pastoral.', 'error');
     } finally {
       setBusy(false);
     }
@@ -2304,6 +2373,7 @@
     }
     if (path === 'accessPolicy.mode' && value === 'open') {
       state.editorCourse.accessPolicy.prerequisiteCourseIds = [];
+      state.editorCourse.accessPolicy.requiredPastoralPhase = null;
     }
     if (path === 'title' && state.editorIsNew) {
       state.editorCourse.slug = slugify(value);
@@ -2434,6 +2504,12 @@
       if (studentAccountButton) {
         event.preventDefault();
         await manageStudentAccount(studentAccountButton);
+        return;
+      }
+      const pastoralButton = event.target.closest('[data-action="save-student-pastoral-phase"], [data-action="grant-student-pastoral-course"], [data-action="revoke-student-pastoral-course"]');
+      if (pastoralButton) {
+        event.preventDefault();
+        await manageStudentPastoralAccess(pastoralButton);
         return;
       }
       const closeStudentButton = event.target.closest('[data-action="close-student-progress"]');

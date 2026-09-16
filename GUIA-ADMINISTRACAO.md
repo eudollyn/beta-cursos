@@ -39,6 +39,13 @@ Em **Exportações e segurança**:
 - **Exportar catálogo** e **Importar catálogo** cuidam somente de cursos e referências da biblioteca, sem contas, progresso ou arquivos;
 - guarde o backup completo como documento confidencial, pois ele contém dados pessoais protegidos.
 
+## Fases e liberações pastorais
+
+- A categoria do curso organiza o catálogo; ela não define quem pode acessá-lo.
+- Ao editar um curso restrito, escolha uma fase mínima (Atrair, Adorar, Relacionar, Discipular ou Engajar), pré-requisitos, ou ambos. Cursos abertos ignoram essas regras.
+- No detalhe de cada aluno, somente proprietário e administradores podem cadastrar/alterar a fase ou liberar excepcionalmente um curso. Registre sempre o motivo; a liberação pode ter data de expiração e pode ser revogada sem alterar a fase.
+- Concluir um curso nunca muda a fase do aluno automaticamente. Até a integração com o CRM, essa decisão permanece manual e fica auditada.
+
 ## Funções da equipe
 
 - **Proprietário:** acesso total, altera funções, exclui contas e baixa o backup completo.

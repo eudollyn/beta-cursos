@@ -14,6 +14,7 @@ const TABLES = Object.freeze([
   'admins', 'courses', 'media', 'audit_log', 'app_meta', 'app_users',
   'app_checkouts', 'app_enrollments', 'app_progress', 'app_quiz_attempts',
   'app_course_completions', 'app_video_progress', 'app_enrollment_grants',
+  'app_pastoral_course_grants',
 ]);
 const TABLE_SET = new Set(TABLES);
 const JSON_COLUMNS = new Set(['data_json', 'details_json', 'snapshot_json', 'answers_json', 'results_json', 'intervals_json']);

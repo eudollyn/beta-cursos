@@ -22,6 +22,8 @@ const STUDENT_MANAGER_ROLES = new Set(['owner', 'admin']);
 const ASSIGNABLE_TEAM_ROLES = new Set(['student', 'facilitator', 'admin']);
 const ACCOUNT_STATUSES = new Set(['active', 'disabled']);
 const COURSE_CATEGORIES = new Set(['Alcançar', 'Adorar', 'Relacionar', 'Discipular', 'Engajar']);
+const PASTORAL_PHASES = Object.freeze(['Atrair', 'Adorar', 'Relacionar', 'Discipular', 'Engajar']);
+const PASTORAL_PHASE_SET = new Set(PASTORAL_PHASES);
 const PAYMENT_METHODS = new Set(['pix', 'credit_card', 'boleto']);
 const PAYMENT_ACCESS_REVOKING_STATUSES = new Set(['rejected', 'cancelled', 'refunded', 'charged_back']);
 const QUIZ_STATUSES = new Set(['locked', 'available', 'failed', 'exhausted', 'passed']);
@@ -442,6 +444,9 @@ async function ensureApplicationSchema(DB) {
         account_status TEXT NOT NULL DEFAULT 'active' CHECK (account_status IN ('active', 'disabled')),
         disabled_at TEXT,
         disabled_by TEXT,
+        pastoral_phase TEXT,
+        pastoral_phase_updated_at TEXT,
+        pastoral_phase_updated_by TEXT,
         is_demo INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
@@ -587,6 +592,21 @@ async function ensureApplicationSchema(DB) {
         updated_at TEXT NOT NULL
       )`),
       DB.prepare('CREATE INDEX IF NOT EXISTS app_enrollment_grants_user_course_status_idx ON app_enrollment_grants (user_id, course_id, status)'),
+      DB.prepare(`CREATE TABLE IF NOT EXISTS app_pastoral_course_grants (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        course_id TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('active', 'revoked', 'expired')),
+        reason TEXT NOT NULL,
+        granted_by TEXT NOT NULL,
+        granted_at TEXT NOT NULL,
+        expires_at TEXT,
+        revoked_by TEXT,
+        revoked_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`),
+      DB.prepare('CREATE INDEX IF NOT EXISTS app_pastoral_course_grants_user_course_status_idx ON app_pastoral_course_grants (user_id, course_id, status, expires_at)'),
     ]).catch(error => {
       INITIALIZED_DATABASES.delete(DB);
       throw error;
@@ -597,7 +617,7 @@ async function ensureApplicationSchema(DB) {
 }
 
 function publicUser(row) {
-  return {
+  const user = {
     id: row.id,
     name: row.full_name,
     email: row.email,
@@ -608,6 +628,8 @@ function publicUser(row) {
     isDemo: Boolean(Number(row.is_demo)),
     emailVerified: Boolean(row.email_verified_at),
   };
+  if (PASTORAL_PHASE_SET.has(row.pastoral_phase)) user.pastoralPhase = row.pastoral_phase;
+  return user;
 }
 
 function publicFeatures(config) {
@@ -785,7 +807,7 @@ export async function resolveSession(request, { DB, config = {} } = {}) {
   const tokenHash = hashOpaqueToken(token, resolvedConfig.sessionSecret);
   let row = await first(DB.prepare(`SELECT
       u.id, u.email, u.full_name, u.date_of_birth, u.member_code, u.member_code_validated, u.role,
-      u.account_status, u.disabled_at, u.disabled_by, u.is_demo, u.email_verified_at, s.expires_at
+      u.account_status, u.disabled_at, u.disabled_by, u.pastoral_phase, u.is_demo, u.email_verified_at, s.expires_at
     FROM app_sessions s
     JOIN app_users u ON u.id = s.user_id
     WHERE s.token_hash = ?`)
@@ -857,7 +879,7 @@ async function recordAdministrativeAudit(DB, actorEmail, action, entityType, ent
 async function findUserByEmail(DB, email) {
   return first(DB.prepare(`SELECT
     id, email, full_name, password_hash, date_of_birth, member_code, member_code_validated, role,
-    account_status, disabled_at, disabled_by, is_demo, email_verified_at
+    account_status, disabled_at, disabled_by, pastoral_phase, is_demo, email_verified_at
     FROM app_users WHERE email = ?`)
     .bind(normalizeEmail(email)));
 }
@@ -1390,10 +1412,14 @@ function normalizeCourseAccessPolicy(course) {
   const prerequisiteCourseIds = Array.isArray(source.prerequisiteCourseIds)
     ? [...new Set(source.prerequisiteCourseIds.map(id => safeIdentifier(id)).filter(Boolean))]
     : [];
+  const requiredPastoralPhase = PASTORAL_PHASE_SET.has(source.requiredPastoralPhase)
+    ? source.requiredPastoralPhase
+    : null;
   return {
     mode,
     prerequisiteCourseIds: mode === 'restricted' ? prerequisiteCourseIds : [],
     prerequisiteMode: 'all',
+    requiredPastoralPhase: mode === 'restricted' ? requiredPastoralPhase : null,
     catalogVisibility: source.catalogVisibility === 'hidden_until_eligible'
       ? 'hidden_until_eligible'
       : 'show_locked',
@@ -1487,7 +1513,7 @@ async function handlePublicCatalog(request, context) {
   const courses = [];
   for (const row of rows) {
     const parsed = courseMap.get(row.id) || parseCourse(row);
-    const decision = accessDecision(parsed, user, completedCourseIds, courseMap);
+    const decision = await accessDecision(context.DB, parsed, user, completedCourseIds, courseMap);
     if (!privileged && !decision.allowed
       && parsed.accessPolicy.catalogVisibility === 'hidden_until_eligible') continue;
     const enrolled = privileged || enrolledCourseIds.has(row.id);
@@ -1579,11 +1605,27 @@ async function completionIdsForUser(DB, userId, courseMap) {
   return completed;
 }
 
-function accessDecision(course, user, completedCourseIds, courseMap) {
+function pastoralPhaseIndex(value) {
+  return PASTORAL_PHASES.indexOf(value);
+}
+
+async function activePastoralGrant(DB, userId, courseId) {
+  if (!userId) return null;
+  const timestamp = nowIso();
+  const grant = await first(DB.prepare(`SELECT id, reason, granted_at, expires_at
+    FROM app_pastoral_course_grants
+    WHERE user_id = ? AND course_id = ? AND status = 'active'
+      AND (expires_at IS NULL OR expires_at > ?)
+    ORDER BY granted_at DESC
+    LIMIT 1`).bind(userId, courseId, timestamp));
+  return grant || null;
+}
+
+async function accessDecision(DB, course, user, completedCourseIds, courseMap) {
   const policy = normalizeCourseAccessPolicy(course);
   const privileged = ADMIN_ROLES.has(user?.role);
   if (privileged || policy.mode === 'open') {
-    return { allowed: true, reasonCode: null, reason: '', nextStep: '', missingPrerequisiteCourseIds: [], missingPrerequisites: [] };
+    return { allowed: true, reasonCode: null, reason: '', nextStep: '', missingPrerequisiteCourseIds: [], missingPrerequisites: [], requiredPastoralPhase: null, pastoralGrant: false };
   }
   const allPrerequisites = policy.prerequisiteCourseIds.map(id => ({ id, title: courseMap.get(id)?.title || id }));
   if (!user) {
@@ -1594,7 +1636,31 @@ function accessDecision(course, user, completedCourseIds, courseMap) {
       nextStep: 'Entre ou crie sua conta para continuar.',
       missingPrerequisiteCourseIds: policy.prerequisiteCourseIds,
       missingPrerequisites: allPrerequisites,
+      requiredPastoralPhase: policy.requiredPastoralPhase,
+      pastoralGrant: false,
     };
+  }
+  await expirePastoralGrants(DB, user.id, course.id);
+  const grant = await activePastoralGrant(DB, user.id, course.id);
+  if (grant) {
+    return { allowed: true, reasonCode: null, reason: '', nextStep: '', missingPrerequisiteCourseIds: [], missingPrerequisites: [], requiredPastoralPhase: policy.requiredPastoralPhase, pastoralGrant: true, grantExpiresAt: grant.expires_at || null };
+  }
+  if (policy.requiredPastoralPhase) {
+    const currentIndex = pastoralPhaseIndex(user.pastoralPhase);
+    const requiredIndex = pastoralPhaseIndex(policy.requiredPastoralPhase);
+    if (currentIndex < requiredIndex) {
+      const hasPhase = currentIndex >= 0;
+      return {
+        allowed: false,
+        reasonCode: hasPhase ? 'pastoral_phase_required' : 'pastoral_phase_unassigned',
+        reason: hasPhase ? `Este curso é liberado a partir da fase ${policy.requiredPastoralPhase}.` : 'Sua fase de desenvolvimento ainda não foi cadastrada.',
+        nextStep: hasPhase ? `Converse com a liderança sobre a fase ${policy.requiredPastoralPhase}.` : 'Converse com a liderança para cadastrar sua fase.',
+        missingPrerequisiteCourseIds: [],
+        missingPrerequisites: [],
+        requiredPastoralPhase: policy.requiredPastoralPhase,
+        pastoralGrant: false,
+      };
+    }
   }
   const missingPrerequisiteCourseIds = policy.prerequisiteCourseIds.filter(id => !completedCourseIds.has(id));
   const missingPrerequisites = missingPrerequisiteCourseIds.map(id => ({ id, title: courseMap.get(id)?.title || id }));
@@ -1606,9 +1672,11 @@ function accessDecision(course, user, completedCourseIds, courseMap) {
       nextStep: `Conclua primeiro: ${missingPrerequisites.map(item => item.title).join(', ')}.`,
       missingPrerequisiteCourseIds,
       missingPrerequisites,
+      requiredPastoralPhase: policy.requiredPastoralPhase,
+      pastoralGrant: false,
     };
   }
-  return { allowed: true, reasonCode: null, reason: '', nextStep: '', missingPrerequisiteCourseIds: [], missingPrerequisites: [] };
+  return { allowed: true, reasonCode: null, reason: '', nextStep: '', missingPrerequisiteCourseIds: [], missingPrerequisites: [], requiredPastoralPhase: policy.requiredPastoralPhase, pastoralGrant: false };
 }
 
 async function allCourseMap(DB) {
@@ -1626,7 +1694,7 @@ async function resolveCourseAccess(DB, user, course) {
   const courseMap = await allCourseMap(DB);
   if (!courseMap.has(course.id)) courseMap.set(course.id, course);
   const completedCourseIds = await completionIdsForUser(DB, user?.id, courseMap);
-  return accessDecision(course, user, completedCourseIds, courseMap);
+  return accessDecision(DB, course, user, completedCourseIds, courseMap);
 }
 
 async function requireCoursePrerequisites(DB, user, course) {
@@ -2848,6 +2916,76 @@ async function createMercadoPagoOrder(context, user, course, checkout) {
   return { orderId, checkoutUrl };
 }
 
+async function reconcileEnrollmentFromGrants(DB, userId, courseId, timestamp = nowIso()) {
+  const active = await first(DB.prepare(`SELECT e.id
+    FROM app_enrollment_grants e
+    LEFT JOIN app_pastoral_course_grants p ON e.grant_key = ('pastoral:' || p.id)
+    WHERE e.user_id = ? AND e.course_id = ? AND e.status = 'active'
+      AND (e.source <> 'pastoral' OR (p.status = 'active' AND (p.expires_at IS NULL OR p.expires_at > ?)))
+    LIMIT 1`).bind(userId, courseId, timestamp));
+  await DB.prepare(`UPDATE app_enrollments SET status = ?, updated_at = ?
+    WHERE user_id = ? AND course_id = ?`)
+    .bind(active ? 'active' : 'suspended', timestamp, userId, courseId)
+    .run();
+  return Boolean(active);
+}
+
+async function expirePastoralGrants(DB, userId, courseId, timestamp = nowIso()) {
+  const expired = await all(DB.prepare(`SELECT id FROM app_pastoral_course_grants
+    WHERE user_id = ? AND course_id = ? AND status = 'active'
+      AND expires_at IS NOT NULL AND expires_at <= ?`).bind(userId, courseId, timestamp));
+  if (!expired.length) return false;
+  for (const grant of expired) {
+    await DB.prepare(`UPDATE app_pastoral_course_grants
+      SET status = 'expired', updated_at = ? WHERE id = ? AND status = 'active'`)
+      .bind(timestamp, grant.id).run();
+    await DB.prepare(`UPDATE app_enrollment_grants
+      SET status = 'suspended', suspension_reason = 'pastoral_grant_expired',
+        suspended_at = ?, updated_at = ? WHERE grant_key = ?`)
+      .bind(timestamp, timestamp, `pastoral:${grant.id}`).run();
+  }
+  await reconcileEnrollmentFromGrants(DB, userId, courseId, timestamp);
+  return true;
+}
+
+async function createPastoralCourseGrant(context, administrator, student, course, payload) {
+  const reason = String(payload.reason || '').trim().replace(/\s+/g, ' ');
+  if (reason.length < 3 || reason.length > 500) {
+    throw new ApplicationError(422, 'invalid_pastoral_grant_reason', 'Informe um motivo entre 3 e 500 caracteres para a liberação excepcional.');
+  }
+  const expiresAt = payload.expiresAt ? new Date(String(payload.expiresAt)) : null;
+  if (expiresAt && (!Number.isFinite(expiresAt.getTime()) || expiresAt.getTime() <= Date.now())) {
+    throw new ApplicationError(422, 'invalid_pastoral_grant_expiry', 'A data de expiração precisa estar no futuro.');
+  }
+  const timestamp = nowIso();
+  const id = createId('pgr');
+  const operation = async DB => {
+    await DB.prepare(`INSERT INTO app_pastoral_course_grants
+      (id, user_id, course_id, status, reason, granted_by, granted_at, expires_at, revoked_by, revoked_at, created_at, updated_at)
+      VALUES (?, ?, ?, 'active', ?, ?, ?, ?, NULL, NULL, ?, ?)`)
+      .bind(id, student.id, course.id, reason, administrator.email, timestamp,
+        expiresAt ? expiresAt.toISOString() : null, timestamp, timestamp).run();
+    await DB.prepare(`INSERT INTO app_enrollment_grants
+      (id, grant_key, user_id, course_id, source, checkout_id, status, suspension_reason, suspended_at, created_at, updated_at)
+      VALUES (?, ?, ?, ?, 'pastoral', NULL, 'active', NULL, NULL, ?, ?)`)
+      .bind(createId('eng'), `pastoral:${id}`, student.id, course.id, timestamp, timestamp).run();
+    await DB.prepare(`INSERT INTO app_enrollments
+      (id, user_id, course_id, status, source, checkout_id, created_at, updated_at)
+      VALUES (?, ?, ?, 'active', 'pastoral', NULL, ?, ?)
+      ON CONFLICT (user_id, course_id) DO UPDATE SET status = 'active', updated_at = excluded.updated_at`)
+      .bind(createId('enr'), student.id, course.id, timestamp, timestamp).run();
+    await DB.prepare(`INSERT INTO app_progress (user_id, course_id, snapshot_json, version, updated_at)
+      VALUES (?, ?, ?, 1, ?) ON CONFLICT (user_id, course_id) DO NOTHING`)
+      .bind(student.id, course.id, JSON.stringify(initialProgress(course)), timestamp).run();
+  };
+  if (typeof context.DB.transaction === 'function') await context.DB.transaction(operation);
+  else await operation(context.DB);
+  await recordAdministrativeAudit(context.DB, administrator.email, 'grant_pastoral_course_access', 'pastoral_course_grant', id, {
+    studentId: student.id, courseId: course.id, expiresAt: expiresAt ? expiresAt.toISOString() : null,
+  });
+  return { id, courseId: course.id, status: 'active', reason, grantedBy: administrator.email, grantedAt: timestamp, expiresAt: expiresAt ? expiresAt.toISOString() : null };
+}
+
 function mercadoPagoStatus(value) {
   const status = String(value || '').toLowerCase();
   if (['approved', 'processed'].includes(status)) return 'approved';
@@ -3381,7 +3519,7 @@ async function handleAdminStudents(request, context) {
   const limit = positiveInteger(url.searchParams.get('limit'), 500, 1, 500);
   const pattern = `%${search.replace(/[\%_]/g, '\$&')}%`;
   const users = await all(context.DB.prepare(`SELECT
-    id, email, full_name, member_code, account_status, disabled_at, disabled_by, last_access_at
+    id, email, full_name, member_code, account_status, disabled_at, disabled_by, pastoral_phase, last_access_at
     FROM app_users
     WHERE role = 'student'
       AND (? = '' OR LOWER(full_name) LIKE ? ESCAPE '\' OR LOWER(email) LIKE ? ESCAPE '\' OR LOWER(COALESCE(member_code, '')) LIKE ? ESCAPE '\')
@@ -3412,6 +3550,7 @@ async function handleAdminStudents(request, context) {
     accountStatus: normalizeAccountStatus(user.account_status),
     disabledAt: user.disabled_at || null,
     disabledBy: user.disabled_by || null,
+    pastoralPhase: PASTORAL_PHASE_SET.has(user.pastoral_phase) ? user.pastoral_phase : null,
     enrolledAt: null,
     lastAccess: user.last_access_at || null,
     progress: {},
@@ -3448,7 +3587,7 @@ async function handleAdminStudentProgress(request, context, studentId) {
   const id = safeIdentifier(studentId);
   if (!id) throw new ApplicationError(404, 'student_not_found', 'Aluno não encontrado.');
   const student = await first(context.DB.prepare(`SELECT
-    id, email, full_name, member_code, account_status, disabled_at, disabled_by, created_at, last_access_at
+    id, email, full_name, member_code, account_status, disabled_at, disabled_by, pastoral_phase, pastoral_phase_updated_at, pastoral_phase_updated_by, created_at, last_access_at
     FROM app_users
     WHERE id = ? AND role = 'student'`)
     .bind(id));
@@ -3483,6 +3622,11 @@ async function handleAdminStudentProgress(request, context, studentId) {
     WHERE user_id = ?
     ORDER BY updated_at DESC`)
     .bind(id));
+  const pastoralGrants = await all(context.DB.prepare(`SELECT
+    g.id, g.course_id, g.status, g.reason, g.granted_by, g.granted_at, g.expires_at, g.revoked_by, g.revoked_at,
+    c.data_json AS course_data_json
+    FROM app_pastoral_course_grants g JOIN courses c ON c.id = g.course_id
+    WHERE g.user_id = ? ORDER BY g.granted_at DESC`).bind(id));
   const attemptsByCourse = new Map();
   for (const attempt of attemptRows) {
     if (!attemptsByCourse.has(attempt.course_id)) attemptsByCourse.set(attempt.course_id, new Map());
@@ -3541,10 +3685,26 @@ async function handleAdminStudentProgress(request, context, studentId) {
       accountStatus: normalizeAccountStatus(student.account_status),
       disabledAt: student.disabled_at || null,
       disabledBy: student.disabled_by || null,
+      pastoralPhase: PASTORAL_PHASE_SET.has(student.pastoral_phase) ? student.pastoral_phase : null,
+      pastoralPhaseUpdatedAt: student.pastoral_phase_updated_at || null,
+      pastoralPhaseUpdatedBy: student.pastoral_phase_updated_by || null,
       registeredAt: student.created_at,
       lastAccess: student.last_access_at || null,
     },
     courses,
+    pastoralGrants: pastoralGrants.map(grant => ({
+      id: grant.id,
+      courseId: grant.course_id,
+      courseTitle: parseJsonObject(grant.course_data_json, {}).title || grant.course_id,
+      status: grant.status === 'active' && grant.expires_at && Date.parse(grant.expires_at) <= Date.now()
+        ? 'expired' : grant.status,
+      reason: grant.reason,
+      grantedBy: grant.granted_by,
+      grantedAt: grant.granted_at,
+      expiresAt: grant.expires_at || null,
+      revokedBy: grant.revoked_by || null,
+      revokedAt: grant.revoked_at || null,
+    })),
   });
 }
 
@@ -3552,7 +3712,7 @@ async function findManagedStudent(context, administrator, studentId) {
   const id = safeIdentifier(studentId);
   if (!id) throw new ApplicationError(404, 'student_not_found', 'Aluno não encontrado.');
   const student = await first(context.DB.prepare(`SELECT
-    id, email, full_name, role, account_status, disabled_at, disabled_by
+    id, email, full_name, role, account_status, disabled_at, disabled_by, pastoral_phase
     FROM app_users
     WHERE id = ?`)
     .bind(id));
@@ -3654,6 +3814,65 @@ async function handleAdminStudentAccess(request, context, studentId, action) {
   throw new ApplicationError(400, 'invalid_account_action', 'Ação de acesso inválida.');
 }
 
+async function handleAdminStudentPastoralPhase(request, context, studentId) {
+  const administrator = await requireSession(request, context);
+  requireStudentManager(administrator);
+  const student = await findManagedStudent(context, administrator, studentId);
+  const payload = await readJson(request);
+  const pastoralPhase = payload.pastoralPhase == null || payload.pastoralPhase === ''
+    ? null : String(payload.pastoralPhase).trim();
+  if (pastoralPhase !== null && !PASTORAL_PHASE_SET.has(pastoralPhase)) {
+    throw new ApplicationError(422, 'invalid_pastoral_phase', `Escolha uma das fases: ${PASTORAL_PHASES.join(', ')}.`);
+  }
+  const timestamp = nowIso();
+  await context.DB.prepare(`UPDATE app_users
+    SET pastoral_phase = ?, pastoral_phase_updated_at = ?, pastoral_phase_updated_by = ?, updated_at = ?
+    WHERE id = ? AND role = 'student'`)
+    .bind(pastoralPhase, timestamp, administrator.email, timestamp, student.id).run();
+  await recordAdministrativeAudit(context.DB, administrator.email, 'change_pastoral_phase', 'student', student.id, {
+    from: PASTORAL_PHASE_SET.has(student.pastoral_phase) ? student.pastoral_phase : null,
+    to: pastoralPhase,
+  });
+  return json({ success: true, student: { id: student.id, pastoralPhase, pastoralPhaseUpdatedAt: timestamp, pastoralPhaseUpdatedBy: administrator.email } });
+}
+
+async function handleAdminStudentPastoralGrant(request, context, studentId) {
+  const administrator = await requireSession(request, context);
+  requireStudentManager(administrator);
+  const student = await findManagedStudent(context, administrator, studentId);
+  const payload = await readJson(request);
+  const course = await getCourseForEnrollment(context.DB, payload.courseId);
+  const grant = await createPastoralCourseGrant(context, administrator, student, course, payload);
+  return json({ success: true, grant }, 201);
+}
+
+async function handleAdminStudentPastoralGrantRevoke(request, context, studentId, grantId) {
+  const administrator = await requireSession(request, context);
+  requireStudentManager(administrator);
+  const student = await findManagedStudent(context, administrator, studentId);
+  const id = safeIdentifier(grantId);
+  if (!id) throw new ApplicationError(404, 'pastoral_grant_not_found', 'Liberação excepcional não encontrada.');
+  const grant = await first(context.DB.prepare(`SELECT id, course_id, status FROM app_pastoral_course_grants
+    WHERE id = ? AND user_id = ?`).bind(id, student.id));
+  if (!grant) throw new ApplicationError(404, 'pastoral_grant_not_found', 'Liberação excepcional não encontrada.');
+  const timestamp = nowIso();
+  if (grant.status === 'active') {
+    const operation = async DB => {
+      await DB.prepare(`UPDATE app_pastoral_course_grants
+        SET status = 'revoked', revoked_by = ?, revoked_at = ?, updated_at = ?
+        WHERE id = ? AND status = 'active'`).bind(administrator.email, timestamp, timestamp, grant.id).run();
+      await DB.prepare(`UPDATE app_enrollment_grants
+        SET status = 'suspended', suspension_reason = 'pastoral_grant_revoked', suspended_at = ?, updated_at = ?
+        WHERE grant_key = ?`).bind(timestamp, timestamp, `pastoral:${grant.id}`).run();
+      await reconcileEnrollmentFromGrants(DB, student.id, grant.course_id, timestamp);
+    };
+    if (typeof context.DB.transaction === 'function') await context.DB.transaction(operation);
+    else await operation(context.DB);
+    await recordAdministrativeAudit(context.DB, administrator.email, 'revoke_pastoral_course_access', 'pastoral_course_grant', grant.id, { studentId: student.id, courseId: grant.course_id });
+  }
+  return json({ success: true, grant: { id: grant.id, courseId: grant.course_id, status: grant.status === 'active' ? 'revoked' : grant.status } });
+}
+
 async function handleAdminStudentDelete(request, context, studentId) {
   const administrator = await requireSession(request, context);
   requireOwner(administrator);
@@ -3678,6 +3897,8 @@ async function handleAdminStudentDelete(request, context, studentId) {
     await DB.prepare('DELETE FROM app_video_progress WHERE user_id = ?').bind(student.id).run();
     await DB.prepare('DELETE FROM app_progress WHERE user_id = ?').bind(student.id).run();
     await DB.prepare('DELETE FROM app_course_completions WHERE user_id = ?').bind(student.id).run();
+    await DB.prepare('DELETE FROM app_pastoral_course_grants WHERE user_id = ?').bind(student.id).run();
+    await DB.prepare('DELETE FROM app_enrollment_grants WHERE user_id = ?').bind(student.id).run();
     await DB.prepare('DELETE FROM app_enrollments WHERE user_id = ?').bind(student.id).run();
     await DB.prepare('DELETE FROM app_checkouts WHERE user_id = ?').bind(student.id).run();
     const deleted = await DB.prepare(`DELETE FROM app_users
@@ -3938,6 +4159,21 @@ async function dispatchApplicationApi(request, context) {
   if (adminStudentReactivateMatch) {
     if (request.method !== 'POST') return methodNotAllowed(['POST']);
     return handleAdminStudentAccess(request, context, adminStudentReactivateMatch[1], 'reactivate');
+  }
+  const adminStudentPhaseMatch = path.match(/^\/api\/admin\/students\/([a-z0-9][a-z0-9_-]{0,95})\/pastoral-phase$/i);
+  if (adminStudentPhaseMatch) {
+    if (request.method !== 'PATCH') return methodNotAllowed(['PATCH']);
+    return handleAdminStudentPastoralPhase(request, context, adminStudentPhaseMatch[1]);
+  }
+  const adminStudentPastoralGrantRevokeMatch = path.match(/^\/api\/admin\/students\/([a-z0-9][a-z0-9_-]{0,95})\/pastoral-grants\/([a-z0-9][a-z0-9_-]{0,95})\/revoke$/i);
+  if (adminStudentPastoralGrantRevokeMatch) {
+    if (request.method !== 'POST') return methodNotAllowed(['POST']);
+    return handleAdminStudentPastoralGrantRevoke(request, context, adminStudentPastoralGrantRevokeMatch[1], adminStudentPastoralGrantRevokeMatch[2]);
+  }
+  const adminStudentPastoralGrantMatch = path.match(/^\/api\/admin\/students\/([a-z0-9][a-z0-9_-]{0,95})\/pastoral-grants$/i);
+  if (adminStudentPastoralGrantMatch) {
+    if (request.method !== 'POST') return methodNotAllowed(['POST']);
+    return handleAdminStudentPastoralGrant(request, context, adminStudentPastoralGrantMatch[1]);
   }
   const adminStudentDeleteMatch = path.match(/^\/api\/admin\/students\/([a-z0-9][a-z0-9_-]{0,95})$/i);
   if (adminStudentDeleteMatch) {

@@ -307,6 +307,7 @@ test('normaliza as cinco categorias da jornada e a política de pré-requisitos'
     mode: 'restricted',
     prerequisiteCourseIds: ['curso-base'],
     prerequisiteMode: 'all',
+    requiredPastoralPhase: null,
     catalogVisibility: 'show_locked',
   });
 });

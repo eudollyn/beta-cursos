@@ -8,6 +8,7 @@ const SECURITY_HEADERS = {
 const COURSE_STATUSES = new Set(['draft', 'published', 'archived']);
 const COURSE_CATEGORIES = ['Alcançar', 'Adorar', 'Relacionar', 'Discipular', 'Engajar'];
 const COURSE_CATEGORY_SET = new Set(COURSE_CATEGORIES);
+const PASTORAL_PHASES = new Set(['Atrair', 'Adorar', 'Relacionar', 'Discipular', 'Engajar']);
 const COURSE_ACCESS_MODES = new Set(['open', 'restricted']);
 const COURSE_CATALOG_VISIBILITIES = new Set(['show_locked', 'hidden_until_eligible']);
 const COURSE_BODY_LIMIT = 1024 * 1024;
@@ -643,10 +644,16 @@ function normalizeCourseAccessPolicy(document, fallback = {}) {
   if (courseId && prerequisiteCourseIds.includes(courseId)) {
     throw new ApiError(422, 'self_prerequisite', 'Um curso não pode ser pré-requisito dele mesmo.');
   }
+  const requiredPastoralPhase = policy.requiredPastoralPhase ?? document.requiredPastoralPhase
+    ?? fallbackPolicy.requiredPastoralPhase ?? fallback.requiredPastoralPhase ?? null;
+  if (requiredPastoralPhase !== null && requiredPastoralPhase !== '' && !PASTORAL_PHASES.has(String(requiredPastoralPhase))) {
+    throw new ApiError(422, 'invalid_pastoral_phase', 'A fase pastoral do curso é inválida.');
+  }
   return {
     mode,
     prerequisiteCourseIds: mode === 'restricted' ? prerequisiteCourseIds : [],
     prerequisiteMode: 'all',
+    requiredPastoralPhase: mode === 'restricted' && requiredPastoralPhase ? String(requiredPastoralPhase) : null,
     catalogVisibility: mode === 'restricted' ? visibility : 'show_locked',
   };
 }
