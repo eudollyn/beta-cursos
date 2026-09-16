@@ -1,0 +1,17 @@
+.git
+.github
+.openai
+.agents
+node_modules
+dist
+s3-dist
+.data
+.env
+.env.*
+!.env.example
+*.log
+*.tar
+*.tar.gz
+*.zip
+coverage
+outputs

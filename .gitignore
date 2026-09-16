@@ -1,0 +1,16 @@
+dist/
+s3-dist/
+node_modules/
+.npm-cache-local/
+.data/
+.env
+.env.*
+!.env.example
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+assets/brand-source/
+*.tar.gz
+*.patch
+*.log
+.DS_Store

@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Beta Cursos | Formação que transforma</title>
+<meta name="description" content="A plataforma de formação da Igreja Beta. Cresça em Cristo, seja equipado para servir e frutifique onde Deus te plantou.">
+<meta name="theme-color" content="#1B1B1B">
+<meta name="color-scheme" content="dark">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Beta Cursos | Formação que transforma">
+<meta property="og:description" content="Aprenda com direção. Avance com propósito.">
+<meta property="og:image" content="/og.png">
+<meta property="og:image:width" content="1732">
+<meta property="og:image:height" content="908">
+<meta property="og:image:alt" content="Beta Cursos — Aprenda com direção. Avance com propósito.">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="favicon.png" type="image/png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="admin.css" data-beta-admin-style>
+</head>
+<body>
+
+<a class="skip-link" href="#conteudo-principal">Pular para o conteúdo</a>
+
+<!-- ============================================================
+     NAVIGATION
+============================================================ -->
+<nav class="nav" aria-label="Navegação principal">
+  <button type="button" class="nav__logo" onclick="Router.navigate('landing')" aria-label="Beta Cursos — início">
+    <span class="nav__logo-beta">Beta</span>
+    <span class="nav__logo-cursos">/cursos</span>
+  </button>
+
+  <div class="nav__links">
+    <button type="button" class="nav__link" data-route="landing" onclick="Router.navigate('landing')">Início</button>
+    <button type="button" class="nav__link" data-route="catalog" onclick="Router.navigate('catalog')">Cursos</button>
+    <button id="nav-admin-link" type="button" class="nav__link hidden" data-route="admin" onclick="Router.navigate('admin')">Administração</button>
+  </div>
+
+  <div class="nav__actions">
+    <div id="nav-auth" class="flex gap-3">
+      <button type="button" class="btn btn--ghost btn--sm" onclick="Router.navigate('login')">Entrar</button>
+      <button type="button" class="btn btn--primary btn--sm" data-registration-link onclick="Router.navigate('register')">Criar conta</button>
+    </div>
+    <div id="nav-user" class="nav__user hidden">
+      <span id="nav-user-name" class="nav__user-name"></span>
+      <button id="nav-avatar" type="button" class="nav__avatar" onclick="Router.navigate('dashboard')" aria-label="Abrir meu painel"></button>
+      <button type="button" class="btn btn--ghost btn--sm" onclick="Auth.logout()">Sair</button>
+    </div>
+    <button type="button" class="nav__hamburger" onclick="toggleMobileMenu()" aria-label="Abrir menu" aria-controls="mobile-menu" aria-expanded="false">
+      <span></span><span></span><span></span>
+    </button>
+  </div>
+</nav>
+
+<!-- Mobile dropdown menu -->
+<div id="mobile-menu" class="mobile-menu" aria-label="Menu móvel" aria-hidden="true">
+  <button type="button" class="mobile-menu__link" onclick="closeMobileMenuAndNavigate('landing')">Início</button>
+  <button type="button" class="mobile-menu__link" onclick="closeMobileMenuAndNavigate('catalog')">Cursos</button>
+  <button id="mobile-admin-link" type="button" class="mobile-menu__link hidden" onclick="closeMobileMenuAndNavigate('admin')">Administração</button>
+  <div class="mobile-menu__divider"></div>
+  <div id="mobile-menu-auth">
+    <button type="button" class="mobile-menu__link" onclick="closeMobileMenuAndNavigate('login')">Entrar</button>
+    <button type="button" class="mobile-menu__link mobile-menu__link--primary" data-registration-link onclick="closeMobileMenuAndNavigate('register')">Criar conta</button>
+  </div>
+  <div id="mobile-menu-user" class="hidden">
+    <button type="button" class="mobile-menu__link" onclick="closeMobileMenuAndNavigate('dashboard')">Meu painel</button>
+    <button type="button" class="mobile-menu__link" onclick="closeMobileMenu(); Auth.logout();">Sair</button>
+  </div>
+</div>
+
+<!-- ============================================================
+     PAGE: LANDING
+============================================================ -->
+<main id="conteudo-principal" tabindex="-1">
+<div id="page-landing" class="page landing">
+
+  <section class="hero">
+    <div class="hero__bg"></div>
+    <div class="hero__bg-shapes">
+      <div class="hero__shape hero__shape--1"></div>
+      <div class="hero__shape hero__shape--2"></div>
+      <div class="hero__shape hero__shape--3"></div>
+    </div>
+    <div class="hero__content">
+      <div class="hero__eyebrow">
+        <span class="hero__eyebrow-line"></span>
+        <span class="hero__eyebrow-text">Igreja Beta · Formação e Discipulado</span>
+      </div>
+      <h1 class="hero__title">Aprenda com direção.<br><em>Avance com propósito.</em></h1>
+      <p class="hero__subtitle">A formação da Igreja Beta para cada passo da sua caminhada com Cristo. Um curso para cada etapa da jornada — do primeiro contato ao chamado para liderar.</p>
+      <div class="hero__actions">
+        <button id="hero-cta-btn" class="btn btn--primary btn--xl">Ver catálogo</button>
+        <button class="btn btn--outline btn--xl" onclick="document.getElementById('como-funciona').scrollIntoView({ behavior: 'smooth' })">Como funciona</button>
+      </div>
+      <div class="hero__stat-row" aria-label="Destaques da plataforma" hidden>
+        <div class="hero__stat">
+  <strong class="hero__stat-value">JORNADA</strong>
+  <span class="hero__stat-label">formação com propósito</span>
+</div>
+
+<div class="hero__stat">
+  <strong class="hero__stat-value">NO SEU RITMO</strong>
+  <span class="hero__stat-label">aprendizado flexível</span>
+</div>
+
+<div class="hero__stat">
+  <strong class="hero__stat-value">PROGRESSO</strong>
+  <span class="hero__stat-label">acompanhamento visível</span>
+</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="course-feature" hidden>
+    <div class="course-feature__inner">
+      <div>
+        <div class="course-feature__label">Curso em destaque</div>
+        <h2 id="featured-course-title" class="course-feature__title">Curso Beta</h2>
+        <p id="featured-course-description" class="course-feature__desc"></p>
+        <div class="course-feature__meta">
+          <span id="featured-course-category" class="badge badge--orange"></span>
+          <span id="featured-course-level" class="badge badge--gray"></span>
+          <span id="featured-course-duration" class="badge badge--petrol"></span>
+        </div>
+        <button id="featured-course-button" class="btn btn--primary btn--lg">Conhecer o curso →</button>
+      </div>
+      <div class="course-feature__card">
+        <div id="featured-course-lessons" class="lesson-list"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="como-funciona" class="how-it-works">
+    <div class="how-it-works__inner">
+      <div class="section-header">
+        <div class="section-header__label">Como funciona</div>
+        <h2 class="section-header__title">Uma jornada guiada, etapa por etapa</h2>
+        <p class="section-header__sub">Cada curso combina os recursos necessários para conduzir o aprendizado com clareza e no seu ritmo.</p>
+      </div>
+      <div class="steps-grid">
+        <article class="step-card">
+          <div class="step-card__number">01</div>
+          <div class="step-card__icon" aria-hidden="true">START</div>
+          <h3 class="step-card__title">Acesse a lição</h3>
+          <p class="step-card__desc">Encontre os materiais adequados ao tema, como textos, apostilas, vídeos ou orientações.</p>
+        </article>
+        <article class="step-card">
+          <div class="step-card__number">02</div>
+          <div class="step-card__icon" aria-hidden="true">PLAY</div>
+          <h3 class="step-card__title">Aprenda no seu ritmo</h3>
+          <p class="step-card__desc">Quando houver vídeo, assista à aula dentro da plataforma e continue de onde parou.</p>
+        </article>
+        <article class="step-card">
+          <div class="step-card__number">03</div>
+          <div class="step-card__icon" aria-hidden="true">QUIZ</div>
+          <h3 class="step-card__title">Conclua a atividade</h3>
+          <p class="step-card__desc">Quando houver avaliação, responda às questões para consolidar o aprendizado.</p>
+        </article>
+        <article class="step-card">
+          <div class="step-card__number">04</div>
+          <div class="step-card__icon" aria-hidden="true">NEXT</div>
+          <h3 class="step-card__title">Avance de lição</h3>
+          <p class="step-card__desc">Conclua os recursos disponíveis e mantenha seu progresso registrado em sua conta.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="brand-statement" aria-labelledby="brand-statement-title">
+    <div class="brand-statement__inner">
+      <p class="section-header__label">Formação Beta</p>
+      <h2 id="brand-statement-title">Aqui, formação é discipulado.</h2>
+      <p>Não formamos para acumular conteúdo, mas para transformar vidas. Cada curso é um passo na jornada de conhecer a Cristo, servir à Sua igreja e frutificar onde Deus te plantou.</p>
+    </div>
+  </section>
+
+  <section class="faq-section" aria-labelledby="faq-title">
+    <div class="faq-section__inner">
+      <div class="section-header section-header--left">
+        <div class="section-header__label">Dúvidas frequentes</div>
+        <h2 id="faq-title" class="section-header__title">Tudo claro antes de começar.</h2>
+      </div>
+      <div class="faq-grid">
+        <details><summary>Para quem é esta formação?</summary><p>Para todo membro ou frequentador da Beta que quer crescer e caminhar com propósito. Há um curso para cada etapa da jornada — você não precisa já estar pronto, precisa querer ser formado.</p></details>
+        <details><summary>Preciso ser membro da Igreja Beta?</summary><p>Qualquer pessoa pode começar. Os primeiros cursos são abertos a todos, e os próximos passos se abrem conforme você avança na jornada com a gente.</p></details>
+        <details><summary>Consigo continuar de onde parei?</summary><p>Sim. Seu progresso é salvo automaticamente na sua conta. Quando voltar, você continua exatamente da etapa em que parou, inclusive em outro dispositivo.</p></details>
+        <details><summary>Posso baixar a apostila?</summary><p>Sim. Cada lição permite ler a apostila dentro da plataforma e baixar o PDF para estudar quando quiser.</p></details>
+        <details><summary>O que acontece se eu não passar?</summary><p>Você pode revisar a apostila e a aula em vídeo antes de tentar novamente. A próxima lição é liberada assim que você alcança a nota mínima definida para o curso.</p></details>
+      </div>
+    </div>
+  </section>
+
+  <section class="landing-cta">
+    <div class="landing-cta__inner">
+      <h2 class="landing-cta__title">Deus te chamou para mais. Comece a caminhar.</h2>
+      <p class="landing-cta__sub">Conheça sua trilha, veja os próximos passos e avance na formação que a Beta preparou para você.</p>
+      <div class="landing-cta__actions">
+        <button id="landing-course-cta" type="button" class="btn btn--primary btn--lg">Ver catálogo →</button>
+      </div>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div>
+      <div class="footer__logo">Beta <span>Cursos</span></div>
+      <div class="footer__copy">© 2026 Igreja Beta · Formação que transforma</div>
+    </div>
+    <nav class="footer__links" aria-label="Informações legais e privacidade">
+      <a href="#privacy" onclick="Router.navigate('privacy'); return false;">Política de Privacidade</a>
+      <a href="#terms" onclick="Router.navigate('terms'); return false;">Termos de Uso</a>
+      <a href="#cookies" onclick="Router.navigate('cookies'); return false;">Política de Cookies</a>
+      <button type="button" class="footer__link" onclick="CookiePreferences.open(this)">Aviso de cookies</button>
+      <a href="https://www.instagram.com/igreja.beta/" target="_blank" rel="noopener noreferrer">@igreja.beta</a>
+    </nav>
+  </footer>
+</div>
+
+<!-- ============================================================
+     PAGE: PRIVACY POLICY
+============================================================ -->
+<div id="page-privacy" class="page legal-page">
+  <header class="legal-hero">
+    <div class="legal-shell">
+      <p class="section-header__label">Privacidade e proteção de dados</p>
+      <h1>Política de Privacidade</h1>
+      <p>Entenda quais dados a Beta Cursos utiliza, por que eles são necessários e como exercer seus direitos.</p>
+      <div class="legal-meta" aria-label="Informações da versão">
+        <span>Versão 2026-07-23</span>
+        <span>Atualizada em 23 de julho de 2026</span>
+        <span>Minuta em revisão jurídica</span>
+      </div>
+    </div>
+  </header>
+  <div class="legal-shell legal-layout">
+    <aside class="legal-notice" role="note" aria-label="Situação deste documento">
+      <strong>Minuta em revisão jurídica</strong>
+      <p>O texto descreve o funcionamento atual e deve ser validado pela assessoria jurídica da Igreja Beta antes do lançamento definitivo.</p>
+    </aside>
+    <article class="legal-document">
+      <section>
+        <h2>1. Responsável pelo tratamento</h2>
+        <p>A responsável pela plataforma é a <strong>Igreja Beta</strong>, CNPJ <strong>21.726.252/0001-72</strong>, com sede na Rua Niquelina, 1310, Santa Efigênia, Belo Horizonte - MG, CEP 30.270-050.</p>
+        <p>Pedidos e dúvidas sobre dados pessoais podem ser enviados para <a href="mailto:contato@igrejabeta.com.br">contato@igrejabeta.com.br</a>.</p>
+      </section>
+      <section>
+        <h2>2. Quem pode usar a plataforma</h2>
+        <p>A Beta Cursos permite cadastro de pessoas com <strong>16 anos ou mais</strong>. A data de nascimento é solicitada para aplicar essa regra, impedir datas inválidas ou futuras e administrar a conta.</p>
+        <p>Cadastros de pessoas com menos de 16 anos são bloqueados.</p>
+      </section>
+      <section>
+        <h2>3. Dados utilizados</h2>
+        <ul>
+          <li><strong>Cadastro:</strong> nome completo, e-mail, data de nascimento e senha protegida por hash.</li>
+          <li><strong>Formação:</strong> cursos e lições acessados, materiais abertos, aulas assistidas, respostas, pontuações e progresso.</li>
+          <li><strong>Relacionamento:</strong> matrícula, conclusão, data do último acesso e registros necessários para suporte e segurança.</li>
+          <li><strong>Compras:</strong> identificadores, valores e situação da transação quando os pagamentos forem ativados. Dados completos de cartão são tratados pelo Mercado Pago.</li>
+          <li><strong>Dados técnicos:</strong> endereço IP, informações básicas do navegador e eventos de autenticação e segurança.</li>
+          <li><strong>Preferências técnicas:</strong> cookie de sessão, armazenamento local essencial e preferências da interface.</li>
+        </ul>
+      </section>
+      <section>
+        <h2>4. Finalidades</h2>
+        <p>Os dados são usados para criar e proteger a conta, controlar o acesso, registrar matrículas, disponibilizar conteúdos, acompanhar o progresso, aplicar avaliações, prestar suporte, enviar mensagens transacionais e manter a segurança.</p>
+        <p>Quando o pagamento estiver ativo, os dados também serão usados para criar e confirmar cobranças, conciliar transações e liberar o curso após a confirmação do provedor.</p>
+      </section>
+      <section>
+        <h2>5. Fornecedores</h2>
+        <ul>
+          <li><strong>Railway:</strong> hospedagem da aplicação e do banco de dados.</li>
+          <li><strong>Resend:</strong> envio de confirmação de cadastro e recuperação de senha.</li>
+          <li><strong>Mercado Pago:</strong> processamento e confirmação de pagamentos, quando ativados.</li>
+          <li><strong>YouTube ou Vimeo:</strong> reprodução de vídeos externos cadastrados nos cursos.</li>
+        </ul>
+      </section>
+      <section>
+        <h2>6. Conservação</h2>
+        <p>Os dados são mantidos enquanto a conta estiver ativa e pelo período necessário para cumprir as finalidades, obrigações legais, prevenção de fraude e exercício regular de direitos. Critérios detalhados de retenção e descarte serão formalizados na revisão jurídica e operacional.</p>
+      </section>
+      <section>
+        <h2>7. Direitos do titular</h2>
+        <p>O titular pode solicitar confirmação e acesso, correção, informação sobre compartilhamentos, anonimização, bloqueio ou eliminação quando aplicável, portabilidade nos limites regulamentares, oposição e revogação de consentimento quando essa for a base utilizada.</p>
+        <p>Solicitações devem ser encaminhadas para <a href="mailto:contato@igrejabeta.com.br">contato@igrejabeta.com.br</a>. Poderemos pedir informações para confirmar a identidade do solicitante.</p>
+      </section>
+      <section>
+        <h2>8. Segurança e atualizações</h2>
+        <p>Adotamos senhas com hash, controle de acesso, restrição administrativa e medidas de segurança compatíveis com a plataforma. Nenhum sistema é totalmente imune a incidentes.</p>
+        <p>Esta política pode ser atualizada para refletir mudanças legais, técnicas ou operacionais.</p>
+      </section>
+      <section>
+        <h2>9. Cookies e armazenamento local</h2>
+        <p>A plataforma não utiliza atualmente cookies publicitários nem ferramenta própria de análise de audiência. Consulte a <a href="#cookies" onclick="Router.navigate('cookies'); return false;">Política de Cookies</a>.</p>
+      </section>
+    </article>
+  </div>
+  <footer class="legal-footer">
+    <div class="legal-shell legal-footer__inner">
+      <button type="button" class="btn btn--outline" onclick="Router.navigate('landing')">Voltar ao início</button>
+      <nav aria-label="Outros documentos legais">
+        <a href="#terms" onclick="Router.navigate('terms'); return false;">Termos de Uso</a>
+        <a href="#cookies" onclick="Router.navigate('cookies'); return false;">Política de Cookies</a>
+      </nav>
+    </div>
+  </footer>
+</div>
+
+<!-- ============================================================
+     PAGE: TERMS OF USE
+============================================================ -->
+<div id="page-terms" class="page legal-page">
+  <header class="legal-hero">
+    <div class="legal-shell">
+      <p class="section-header__label">Regras da plataforma</p>
+      <h1>Termos de Uso</h1>
+      <p>Estas condições descrevem o uso responsável e seguro da Beta Cursos.</p>
+      <div class="legal-meta" aria-label="Informações da versão">
+        <span>Versão 2026-07-23</span>
+        <span>Atualizados em 23 de julho de 2026</span>
+        <span>Minuta em revisão jurídica</span>
+      </div>
+    </div>
+  </header>
+  <div class="legal-shell legal-layout">
+    <aside class="legal-notice" role="note">
+      <strong>Minuta em revisão jurídica</strong>
+      <p>As regras abaixo devem ser validadas juridicamente antes do lançamento definitivo.</p>
+    </aside>
+    <article class="legal-document">
+      <section><h2>1. Responsável e aplicação</h2><p>A Beta Cursos é mantida pela Igreja Beta, CNPJ 21.726.252/0001-72, com sede na Rua Niquelina, 1310, Santa Efigênia, Belo Horizonte - MG, CEP 30.270-050.</p><p>Ao usar a plataforma, o usuário deve observar estes Termos e a Política de Privacidade.</p></section>
+      <section><h2>2. Idade mínima</h2><p>O cadastro é permitido a partir dos <strong>16 anos</strong>. A plataforma solicita a data de nascimento e bloqueia cadastros abaixo dessa idade.</p></section>
+      <section><h2>3. Conta e segurança</h2><p>O usuário deve fornecer informações verdadeiras, manter a senha em sigilo e utilizar somente a própria conta. Suspeitas de acesso indevido devem ser comunicadas para <a href="mailto:contato@igrejabeta.com.br">contato@igrejabeta.com.br</a>.</p></section>
+      <section><h2>4. Conteúdos e propriedade intelectual</h2><p>Vídeos, textos, apostilas, imagens, marcas, questionários e demais materiais são destinados ao uso pessoal e formativo autorizado. Não é permitido copiar, vender, redistribuir ou publicar os materiais sem autorização.</p><p>O progresso e os resultados podem ser acompanhados pelos administradores para gestão da formação.</p></section>
+      <section><h2>5. Pagamentos</h2><p>Quando um curso pago estiver disponível, preço e condições serão apresentados antes da confirmação. O processamento será realizado pelo Mercado Pago e a liberação dependerá da confirmação do pagamento pelo servidor.</p></section>
+      <section><h2>6. Uso aceitável</h2><p>É proibido compartilhar credenciais, tentar acessar áreas sem autorização, explorar falhas, interferir no funcionamento, enviar código malicioso, automatizar acessos abusivos ou utilizar a plataforma para atividades ilícitas.</p></section>
+      <section><h2>7. Disponibilidade e suspensão</h2><p>Manutenções, falhas de fornecedores ou situações fora do controle da Igreja Beta podem causar interrupções. Contas podem ser suspensas em caso de fraude, risco de segurança, violação destes Termos ou obrigação legal.</p></section>
+      <section><h2>8. Alterações e contato</h2><p>Os Termos podem ser atualizados para refletir mudanças legais, técnicas ou nos serviços. Dúvidas podem ser enviadas para <a href="mailto:contato@igrejabeta.com.br">contato@igrejabeta.com.br</a>.</p></section>
+    </article>
+  </div>
+  <footer class="legal-footer">
+    <div class="legal-shell legal-footer__inner">
+      <button type="button" class="btn btn--outline" onclick="Router.navigate('landing')">Voltar ao início</button>
+      <nav aria-label="Outros documentos legais">
+        <a href="#privacy" onclick="Router.navigate('privacy'); return false;">Política de Privacidade</a>
+        <a href="#cookies" onclick="Router.navigate('cookies'); return false;">Política de Cookies</a>
+      </nav>
+    </div>
+  </footer>
+</div>
+
+<!-- ============================================================
+     PAGE: COOKIE POLICY
+============================================================ -->
+<div id="page-cookies" class="page legal-page">
+  <header class="legal-hero">
+    <div class="legal-shell">
+      <p class="section-header__label">Tecnologias do navegador</p>
+      <h1>Política de Cookies</h1>
+      <p>Saiba quais recursos são usados para manter login, segurança e funcionamento da Beta Cursos.</p>
+      <div class="legal-meta" aria-label="Informações da versão">
+        <span>Versão 2026-07-23</span>
+        <span>Atualizada em 23 de julho de 2026</span>
+        <span>Minuta em revisão jurídica</span>
+      </div>
+    </div>
+  </header>
+  <div class="legal-shell legal-layout">
+    <aside class="legal-notice" role="note">
+      <strong>Sem publicidade ou análise própria</strong>
+      <p>A Beta Cursos não ativa atualmente cookies publicitários, rastreadores de anúncios nem ferramenta própria de análise de audiência.</p>
+    </aside>
+    <article class="legal-document">
+      <section><h2>1. Recursos essenciais</h2><p>Usamos um cookie de sessão para manter o usuário autenticado e proteger o acesso à conta. Em conexões seguras, ele pode utilizar o nome técnico <code>__Host-beta_session</code>; em ambiente local, pode aparecer como <code>beta_session</code>.</p><p>Também utilizamos armazenamento local do navegador para preferências da interface, registro de ciência deste aviso e cache limitado. O servidor permanece como fonte oficial dos dados em ambiente conectado.</p></section>
+      <section><h2>2. Conteúdos externos</h2><p>Aulas podem incorporar vídeos do YouTube ou Vimeo. Ao abrir conteúdo externo, esses fornecedores podem receber informações técnicas e aplicar suas próprias políticas. O YouTube é incorporado pelo domínio com privacidade reforçada sempre que possível.</p></section>
+      <section><h2>3. O que não usamos</h2><p>Não usamos atualmente cookies de publicidade comportamental, pixels de anúncios ou ferramenta própria de análise. Caso tecnologias opcionais sejam adotadas no futuro, esta política e o mecanismo de escolha serão atualizados antes da ativação.</p></section>
+      <section><h2>4. Como rever o aviso</h2><p>O aviso é informativo e não transforma recursos essenciais em opcionais. Você pode reabri-lo abaixo ou apagar os dados locais pelas configurações do navegador.</p><button type="button" class="btn btn--outline" onclick="CookiePreferences.open(this)">Reabrir aviso de cookies</button></section>
+      <section><h2>5. Contato</h2><p>Dúvidas sobre cookies e dados pessoais podem ser enviadas para <a href="mailto:contato@igrejabeta.com.br">contato@igrejabeta.com.br</a>.</p></section>
+    </article>
+  </div>
+  <footer class="legal-footer">
+    <div class="legal-shell legal-footer__inner">
+      <button type="button" class="btn btn--outline" onclick="Router.navigate('landing')">Voltar ao início</button>
+      <nav aria-label="Outros documentos legais">
+        <a href="#privacy" onclick="Router.navigate('privacy'); return false;">Política de Privacidade</a>
+        <a href="#terms" onclick="Router.navigate('terms'); return false;">Termos de Uso</a>
+      </nav>
+    </div>
+  </footer>
+</div>
+
+<!-- ============================================================
+     PAGE: CATALOG
+============================================================ -->
+<div id="page-catalog" class="page catalog-page">
+  <div class="catalog-inner">
+    <div class="section-header" style="text-align:left;margin-bottom:0;">
+      <div class="section-header__label">Catálogo</div>
+      <h1 class="section-header__title" style="margin:0;">Cursos disponíveis</h1>
+    </div>
+    <div id="catalog-grid" class="catalog-grid"></div>
+  </div>
+</div>
+
+<!-- ============================================================
+     PAGE: COURSE DETAIL
+============================================================ -->
+<div id="page-course" class="page course-detail-page">
+  <div class="course-detail-hero">
+    <div class="course-detail-hero__inner">
+      <div>
+        <div class="hero__eyebrow">
+          <span class="hero__eyebrow-line"></span>
+          <span id="course-detail-eyebrow" class="hero__eyebrow-text">Curso Beta</span>
+        </div>
+        <h1 id="course-detail-title" class="course-detail-hero__title"></h1>
+        <p id="course-detail-subtitle" class="text-md course-detail-hero__subtitle"></p>
+        <p id="course-detail-desc" class="course-detail-hero__desc"></p>
+      </div>
+      <aside class="course-enroll-card" aria-label="Inscrição no curso">
+        <div id="course-price-display" class="course-enroll-card__price"></div>
+        <div id="course-price-note" class="course-enroll-card__price-note"></div>
+        <button id="course-enroll-btn" class="btn btn--primary btn--block btn--lg"></button>
+      </aside>
+    </div>
+  </div>
+  <div class="course-detail-body">
+    <div>
+      <h2 class="course-detail-body__title">Conteúdo do curso</h2>
+      <div id="course-detail-lessons"></div>
+    </div>
+    <aside class="course-detail-aside">
+      <p class="section-header__label">Sua jornada</p>
+      <p>As etapas são liberadas em sequência para você aprender com atenção e acompanhar cada avanço.</p>
+    </aside>
+  </div>
+</div>
+
+<!-- ============================================================
+     PAGE: LOGIN
+============================================================ -->
+<div id="page-login" class="page auth-page">
+  <div class="auth-card">
+    <button type="button" class="auth-card__close" onclick="Router.navigate('landing')" aria-label="Voltar para o início">×</button>
+    <div class="auth-card__logo">
+      <div class="auth-card__beta">Beta</div>
+      <div class="auth-card__sub">Cursos</div>
+    </div>
+    <h1 class="auth-card__title">Bem-vindo de volta</h1>
+    <p class="auth-card__desc">Entre para continuar sua jornada de onde parou.</p>
+    <form id="login-form" class="auth-form" onsubmit="handleLogin(event); return false;">
+      <div class="form-group">
+        <label class="form-label" for="login-email">E-mail</label>
+        <input id="login-email" name="email" type="email" class="form-input" placeholder="seu@email.com" autocomplete="email" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="login-password">Senha</label>
+        <input id="login-password" name="password" type="password" class="form-input" placeholder="••••••••" autocomplete="current-password" required>
+      </div>
+      <div class="auth-inline-action">
+        <button id="login-forgot-password" type="button" onclick="Router.navigate('forgot-password')">Esqueci minha senha</button>
+      </div>
+      <div id="login-error" class="form-error" role="alert" aria-live="polite"></div>
+      <button id="login-resend-verification" type="button" class="auth-text-button" onclick="handleLoginResendVerification()" hidden>Reenviar confirmação</button>
+      <button type="submit" class="btn btn--primary btn--block btn--lg">Entrar</button>
+    </form>
+    <div class="auth-footer" data-registration-link>Não tem conta? <button type="button" onclick="Router.navigate('register')">Criar conta</button></div>
+    <p class="auth-card__privacy">Seu acesso e seu progresso são protegidos pela plataforma Beta Cursos. Consulte a <a href="#privacy" onclick="Router.navigate('privacy'); return false;">Política de Privacidade</a>.</p>
+  </div>
+</div>
+
+<!-- ============================================================
+     PAGE: REGISTER
+============================================================ -->
+<div id="page-register" class="page auth-page">
+  <div class="auth-card">
+    <button type="button" class="auth-card__close" onclick="Router.navigate('landing')" aria-label="Voltar para o início">×</button>
+    <div class="auth-card__logo">
+      <div class="auth-card__beta">Beta</div>
+      <div class="auth-card__sub">Cursos</div>
+    </div>
+    <h1 id="register-title" class="auth-card__title">Crie sua conta</h1>
+    <p id="register-description" class="auth-card__desc">Seu acesso e seu progresso ficarão vinculados ao seu e-mail.</p>
+    <form id="register-form" class="auth-form" onsubmit="handleRegister(event); return false;">
+      <div class="form-group" data-registration-details>
+        <label class="form-label" for="register-name">Nome completo</label>
+        <input id="register-name" name="name" type="text" class="form-input" placeholder="Seu nome" autocomplete="name" maxlength="80" required>
+      </div>
+      <div class="form-group" data-registration-details>
+        <label class="form-label" for="register-birth-date">Data de nascimento</label>
+        <input id="register-birth-date" name="birth-date" type="date" class="form-input" autocomplete="bday" min="1900-01-01" required>
+        <div class="form-hint">É necessário ter pelo menos 16 anos.</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="register-email">E-mail</label>
+        <input id="register-email" name="email" type="email" class="form-input" placeholder="seu@email.com" autocomplete="email" maxlength="120" required>
+      </div>
+      <div class="form-group" data-registration-details>
+        <label class="form-label" for="register-password">Senha</label>
+        <input id="register-password" name="password" type="password" class="form-input" placeholder="Mínimo 10 caracteres" autocomplete="new-password" minlength="10" required>
+      </div>
+      <div class="form-group" data-registration-details>
+        <label class="form-label" for="register-password-confirm">Confirme a senha</label>
+        <input id="register-password-confirm" name="password-confirm" type="password" class="form-input" autocomplete="new-password" minlength="10" required>
+      </div>
+      <div id="register-error" class="form-error" role="alert" aria-live="polite"></div>
+      <button type="submit" class="btn btn--primary btn--block btn--lg">Criar conta</button>
+    </form>
+    <div class="auth-footer">Já tem conta? <button type="button" onclick="Router.navigate('login')">Entrar</button></div>
+    <p class="auth-card__privacy">Consulte a <a href="#privacy" onclick="Router.navigate('privacy'); return false;">Política de Privacidade</a> e os <a href="#terms" onclick="Router.navigate('terms'); return false;">Termos de Uso</a>.</p>
+  </div>
+</div>
+
+<!-- ============================================================
+     PAGE: CHECK EMAIL
+============================================================ -->
+<div id="page-check-email" class="page auth-page">
+  <div class="auth-card">
+    <button type="button" class="auth-card__close" onclick="Router.navigate('landing')" aria-label="Voltar para o início">×</button>
+    <div class="auth-card__logo">
+      <div class="auth-card__beta">Beta</div>
+      <div class="auth-card__sub">Cursos</div>
+    </div>
+    <div class="auth-status-icon" aria-hidden="true">@</div>
+    <h1 class="auth-card__title">Confira seu e-mail</h1>
+    <p class="auth-card__desc">Enviamos as instruções para <strong id="check-email-address"></strong>. Abra o link para definir seu nome e sua senha com segurança.</p>
+    <div id="check-email-error" class="form-error" role="alert" aria-live="polite"></div>
+    <a id="check-email-preview" class="btn btn--primary btn--block btn--lg" href="#" hidden>Abrir link de teste local</a>
+    <button id="check-email-resend" type="button" class="btn btn--secondary btn--block" onclick="handleResendVerification()">Reenviar confirmação</button>
+    <div class="auth-footer">Já confirmou? <button type="button" onclick="Router.navigate('login')">Entrar</button></div>
+    <p class="auth-card__privacy">Por segurança, o link expira e só pode ser utilizado uma vez.</p>
+  </div>
+</div>
+
+<!-- ============================================================
+     PAGE: COMPLETE REGISTRATION
+============================================================ -->
+<div id="page-complete-registration" class="page auth-page">
+  <div class="auth-card">
+    <button type="button" class="auth-card__close" onclick="Router.navigate('landing')" aria-label="Voltar para o início">×</button>
+    <div class="auth-card__logo">
+      <div class="auth-card__beta">Beta</div>
+      <div class="auth-card__sub">Cursos</div>
+    </div>
+    <h1 class="auth-card__title">Conclua seu cadastro</h1>
+    <p class="auth-card__desc">Agora que o e-mail foi comprovado, defina os dados da sua conta.</p>
+    <form id="complete-registration-form" class="auth-form" onsubmit="handleCompleteRegistration(event); return false;">
+      <div class="form-group">
+        <label class="form-label" for="complete-registration-name">Nome completo</label>
+        <input id="complete-registration-name" name="name" type="text" class="form-input" autocomplete="name" maxlength="80" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="complete-registration-birth-date">Data de nascimento</label>
+        <input id="complete-registration-birth-date" name="birth-date" type="date" class="form-input" autocomplete="bday" min="1900-01-01" required>
+        <div class="form-hint">É necessário ter pelo menos 16 anos.</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="complete-registration-password">Crie uma senha</label>
+        <input id="complete-registration-password" name="password" type="password" class="form-input" placeholder="Mínimo 10 caracteres" autocomplete="new-password" minlength="10" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="complete-registration-password-confirm">Confirme a senha</label>
+        <input id="complete-registration-password-confirm" name="password-confirm" type="password" class="form-input" autocomplete="new-password" minlength="10" required>
+      </div>
+      <div id="complete-registration-error" class="form-error" role="alert" aria-live="polite"></div>
+      <button type="submit" class="btn btn--primary btn--block btn--lg">Ativar minha conta</button>
+    </form>
+    <div id="complete-registration-unavailable" class="auth-message" hidden>
+      Este link não está disponível neste navegador. Abra novamente a mensagem recebida por e-mail.
+    </div>
+    <p class="auth-card__privacy">A senha é protegida e nunca é enviada por e-mail. Consulte a <a href="#privacy" onclick="Router.navigate('privacy'); return false;">Política de Privacidade</a>.</p>
+  </div>
+</div>
+
+<!-- ============================================================
+     PAGE: FORGOT PASSWORD
+============================================================ -->
+<div id="page-forgot-password" class="page auth-page">
+  <div class="auth-card">
+    <button type="button" class="auth-card__close" onclick="Router.navigate('login')" aria-label="Voltar para entrar">×</button>
+    <div class="auth-card__logo">
+      <div class="auth-card__beta">Beta</div>
+      <div class="auth-card__sub">Cursos</div>
+    </div>
+    <h1 class="auth-card__title">Recupere sua senha</h1>
+    <p class="auth-card__desc">Informe seu e-mail. Se houver uma conta confirmada, enviaremos um link de recuperação.</p>
+    <form id="forgot-password-form" class="auth-form" onsubmit="handleForgotPassword(event); return false;">
+      <div class="form-group">
+        <label class="form-label" for="forgot-password-email">E-mail</label>
+        <input id="forgot-password-email" name="email" type="email" class="form-input" autocomplete="email" required>
+      </div>
+      <div id="forgot-password-error" class="form-error" role="alert" aria-live="polite"></div>
+      <button type="submit" class="btn btn--primary btn--block btn--lg">Enviar link de recuperação</button>
+    </form>
+    <div id="forgot-password-success" class="auth-message" role="status" aria-live="polite" hidden>
+      <strong>Confira sua caixa de entrada.</strong>
+      <span>Se o endereço estiver cadastrado, as instruções serão enviadas.</span>
+      <a id="forgot-password-preview" class="btn btn--primary btn--block" href="#" hidden>Abrir link de teste local</a>
+    </div>
+    <div class="auth-footer"><button type="button" onclick="Router.navigate('login')">Voltar para entrar</button></div>
+  </div>
+</div>
+
+<!-- ============================================================
+     PAGE: RESET PASSWORD
+============================================================ -->
+<div id="page-reset-password" class="page auth-page">
+  <div class="auth-card">
+    <button type="button" class="auth-card__close" onclick="Router.navigate('login')" aria-label="Voltar para entrar">×</button>
+    <div class="auth-card__logo">
+      <div class="auth-card__beta">Beta</div>
+      <div class="auth-card__sub">Cursos</div>
+    </div>
+    <h1 class="auth-card__title">Defina uma nova senha</h1>
+    <p class="auth-card__desc">Ao concluir, todas as sessões antigas serão encerradas por segurança.</p>
+    <form id="reset-password-form" class="auth-form" onsubmit="handleResetPassword(event); return false;">
+      <div class="form-group">
+        <label class="form-label" for="reset-password-value">Nova senha</label>
+        <input id="reset-password-value" name="password" type="password" class="form-input" placeholder="Mínimo 10 caracteres" autocomplete="new-password" minlength="10" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="reset-password-confirm">Confirme a nova senha</label>
+        <input id="reset-password-confirm" name="password-confirm" type="password" class="form-input" autocomplete="new-password" minlength="10" required>
+      </div>
+      <div id="reset-password-error" class="form-error" role="alert" aria-live="polite"></div>
+      <button type="submit" class="btn btn--primary btn--block btn--lg">Salvar nova senha</button>
+    </form>
+    <div id="reset-password-unavailable" class="auth-message" hidden>
+      Este link não está disponível neste navegador. Solicite uma nova recuperação de senha.
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     PAGE: CHECKOUT
+============================================================ -->
+<div id="page-checkout" class="page checkout-page">
+  <div class="checkout-layout">
+    <div>
+      <div class="demo-notice checkout-commitment" role="note">
+        <span>O valor desta formação não paga o conteúdo — ele marca o seu compromisso. Tudo o que entra volta para a obra.</span>
+      </div>
+      <div id="checkout-environment-notice" class="demo-notice" role="status">
+        <strong>Inscrições em breve</strong>
+        <span>A forma de pagamento oficial ainda está sendo conectada. Nenhuma inscrição paga está disponível neste momento.</span>
+      </div>
+      <h1 class="checkout-section-title">Confirmar inscrição</h1>
+      <div class="checkout-form">
+        <div id="checkout-payment-methods">
+          <span class="form-label payment-methods__label">Selecione o método</span>
+          <div class="payment-methods" role="group" aria-label="Forma de pagamento">
+            <button type="button" class="payment-method-btn active" data-method="pix" aria-pressed="true" onclick="selectPaymentMethod('pix')">
+              <span class="payment-method-btn__icon" aria-hidden="true">PIX</span>
+              <span class="payment-method-btn__label">Pix</span>
+            </button>
+            <button type="button" class="payment-method-btn" data-method="credit_card" aria-pressed="false" onclick="selectPaymentMethod('credit_card')">
+              <span class="payment-method-btn__icon" aria-hidden="true">CARD</span>
+              <span class="payment-method-btn__label">Cartão</span>
+            </button>
+            <button type="button" class="payment-method-btn" data-method="boleto" aria-pressed="false" onclick="selectPaymentMethod('boleto')">
+              <span class="payment-method-btn__icon" aria-hidden="true">DOC</span>
+              <span class="payment-method-btn__label">Boleto</span>
+            </button>
+          </div>
+        </div>
+
+        <div id="checkout-coupon-group" class="form-group">
+          <label class="form-label" for="coupon-input">Código Beta</label>
+          <div class="coupon-row">
+            <input id="coupon-input" name="coupon" type="text" class="form-input" placeholder="Digite o código informado pela igreja" autocomplete="off" oninput="resetCouponIfChanged()">
+            <button id="coupon-btn" type="button" class="btn btn--outline" onclick="applyCoupon()">Aplicar</button>
+          </div>
+          <div id="coupon-message" class="form-hint" aria-live="polite"></div>
+        </div>
+
+        <button id="checkout-submit-btn" type="button" class="btn btn--primary btn--block btn--xl" onclick="handleCheckoutSubmit()">
+          Confirmar inscrição
+        </button>
+        <div id="checkout-environment-badge" class="mp-badge" hidden></div>
+      </div>
+    </div>
+
+    <div class="order-summary">
+      <div class="checkout-section-title" style="margin-bottom:20px;">Sua inscrição</div>
+      <div class="order-summary__course">
+        <div class="order-summary__course-thumb" aria-hidden="true">01</div>
+        <div>
+          <div id="checkout-course-title" class="order-summary__course-title"></div>
+          <div id="checkout-course-sub" class="order-summary__course-sub"></div>
+        </div>
+      </div>
+
+      <div class="price-row">
+        <span class="price-row__label">Contribuição</span>
+        <span id="checkout-price-full" class="price-row__value"></span>
+      </div>
+      <div id="checkout-coupon-discount-row" class="price-row hidden">
+        <span class="price-row__label">Código Beta</span>
+        <span id="checkout-coupon-discount" class="price-row__value price-row__value--discount"></span>
+      </div>
+
+      <div class="price-total">
+        <span class="price-total__label">Total</span>
+        <span id="checkout-total" class="price-total__value"></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     PAGE: DASHBOARD
+============================================================ -->
+<div id="page-dashboard" class="page dashboard-page">
+  <div class="dashboard-inner">
+    <div class="dashboard-header">
+      <div class="dashboard-header__greeting">Painel do aluno</div>
+      <h1 class="dashboard-header__name">Olá, <span id="dashboard-name"></span></h1>
+    </div>
+
+    <div class="dashboard-stats">
+      <div class="stat-card">
+        <div id="stat-enrolled" class="stat-card__value">0</div>
+        <div class="stat-card__label">Cursos inscritos</div>
+      </div>
+      <div class="stat-card">
+        <div id="stat-lessons" class="stat-card__value">0</div>
+        <div class="stat-card__label">Lições concluídas</div>
+      </div>
+      <div class="stat-card">
+        <div id="stat-total-lessons" class="stat-card__value">0</div>
+        <div class="stat-card__label">Lições no módulo</div>
+      </div>
+      <div class="stat-card">
+        <div id="stat-max-attempts" class="stat-card__value">0</div>
+        <div class="stat-card__label">Tentativas por teste</div>
+      </div>
+    </div>
+
+    <div id="dashboard-courses"></div>
+  </div>
+</div>
+
+<!-- ============================================================
+     PAGE: LESSON PLAYER
+============================================================ -->
+<div id="page-lesson" class="page page--lesson">
+  <button type="button" id="sidebar-overlay" class="sidebar-overlay" onclick="closeSidebar()" aria-label="Fechar menu de lições"></button>
+
+  <aside id="lesson-sidebar" class="lesson-sidebar" aria-label="Navegação das lições">
+    <div class="lesson-sidebar__header">
+      <div class="lesson-sidebar__course">Beta Cursos</div>
+      <div class="lesson-sidebar__module"></div>
+      <div class="lesson-sidebar__progress"></div>
+    </div>
+    <nav class="lesson-sidebar__nav" aria-label="Lições do curso"></nav>
+  </aside>
+
+  <button type="button" class="lesson-mobile-nav-btn" onclick="toggleSidebar()" aria-label="Abrir lista de lições" aria-controls="lesson-sidebar" aria-expanded="false">Menu</button>
+
+  <section class="lesson-main" aria-label="Conteúdo da lição">
+    <div id="lesson-main-header" class="lesson-main__header"></div>
+
+    <div class="step-tabs" role="tablist" aria-label="Etapas da lição">
+      <button type="button" id="tab-pdf" class="step-tab" data-step="pdf" role="tab" aria-controls="step-pdf">
+        <span>Apostila</span>
+        <span class="step-tab__check"></span>
+      </button>
+      <button type="button" id="tab-video" class="step-tab" data-step="video" role="tab" aria-controls="step-video">
+        <span>Vídeo</span>
+        <span class="step-tab__check"></span>
+      </button>
+      <button type="button" id="tab-quiz" class="step-tab" data-step="quiz" role="tab" aria-controls="step-quiz">
+        <span>Teste</span>
+        <span class="step-tab__check"></span>
+      </button>
+    </div>
+
+    <div id="step-pdf" class="step-content" role="tabpanel" aria-labelledby="tab-pdf" tabindex="0"></div>
+    <div id="step-video" class="step-content" role="tabpanel" aria-labelledby="tab-video" tabindex="0"></div>
+    <div id="step-quiz" class="step-content" role="tabpanel" aria-labelledby="tab-quiz" tabindex="0"></div>
+  </section>
+</div>
+
+<!-- ============================================================
+     PAGE: ADMIN DASHBOARD
+============================================================ -->
+<div id="page-admin" class="page admin-page">
+  <div id="beta-admin-root" class="beta-admin-root">
+    <div class="admin-loading" role="status">
+      <span class="admin-loading__mark" aria-hidden="true">Beta /admin</span>
+      <h1>Preparando a administração</h1>
+      <p>Carregando cursos, materiais e configurações…</p>
+    </div>
+  </div>
+</div>
+
+</main>
+
+<!-- ============================================================
+     TOAST CONTAINER
+============================================================ -->
+<div id="toast-container" class="toast-container" role="status" aria-live="polite" aria-atomic="true"></div>
+
+<!-- ============================================================
+     COOKIE NOTICE
+============================================================ -->
+<section id="cookie-banner" class="cookie-banner" role="dialog" aria-labelledby="cookie-banner-title" aria-describedby="cookie-banner-description" hidden>
+  <div class="cookie-banner__content">
+    <p class="section-header__label">Sua privacidade</p>
+    <h2 id="cookie-banner-title" tabindex="-1">Aviso de cookies</h2>
+    <p id="cookie-banner-description">A Beta Cursos usa cookie de sessão e armazenamento local essenciais para login, segurança e funcionamento. Não ativamos publicidade nem análise própria.</p>
+  </div>
+  <div class="cookie-banner__actions" aria-label="Informações sobre cookies">
+    <button type="button" class="cookie-banner__choice" onclick="CookiePreferences.acknowledge()">Entendi</button>
+    <button type="button" class="cookie-banner__choice" onclick="Router.navigate('cookies'); CookiePreferences.close({ restoreFocus: false });">Saiba mais</button>
+  </div>
+</section>
+
+<!-- ============================================================
+     SCRIPTS
+============================================================ -->
+<script src="config.js"></script>
+<script src="data.js"></script>
+<script src="catalog.js"></script>
+<script src="app.js"></script>
+<script src="admin.js"></script>
+</body>
+</html>
