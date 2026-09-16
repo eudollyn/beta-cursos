@@ -1765,7 +1765,7 @@ const VideoTracking = {
         await this.complete(session);
       } else if (session.pendingEnded) {
         session.pendingEnded = false;
-        this.updateUi(session, 'Você chegou ao fim, mas ainda há trechos não assistidos. Continue assistindo ou use a confirmação manual.');
+        this.updateUi(session, 'Você chegou ao fim, mas ainda há trechos não assistidos. Continue assistindo para registrar a conclusão.');
       }
       return null;
     }
@@ -1801,7 +1801,7 @@ const VideoTracking = {
         tracking.completed
           ? 'Vídeo concluído automaticamente.'
           : endedWasSent
-            ? 'Você chegou ao fim, mas ainda há trechos não assistidos. Continue assistindo ou use a confirmação manual.'
+            ? 'Você chegou ao fim, mas ainda há trechos não assistidos. Continue assistindo para registrar a conclusão.'
             : 'Acompanhamento automático ativo.',
       );
       if (tracking.completed === true) await this.complete(session);
@@ -1811,7 +1811,7 @@ const VideoTracking = {
       session.failureCount += 1;
       this.persistLocal(session);
       if (session.failureCount >= 2) {
-        this.markUnavailable(session, 'A conexão não confirmou o progresso. Você pode continuar assistindo ou usar a opção manual.');
+        this.markUnavailable(session, 'A conexão não confirmou o progresso. Continue assistindo: vamos tentar sincronizar novamente.');
       } else {
         this.updateUi(session, 'Seu avanço ficou salvo neste dispositivo e será sincronizado novamente.');
       }
@@ -1885,7 +1885,6 @@ const VideoTracking = {
     if (this.current !== session) return;
     this.updateUi(session, message);
     const root = document.getElementById('step-video');
-    root?.querySelector('[data-video-manual-fallback]')?.setAttribute('open', '');
     root?.querySelector('[data-video-tracking-status]')?.classList.add('has-error');
   },
 
@@ -3123,15 +3122,7 @@ function renderVideoStep(courseId, lesson, lp) {
           <p data-video-tracking-message>${rewatch
             ? 'Reassista ao conteúdo. A revisão será confirmada automaticamente.'
             : 'O avanço será registrado automaticamente enquanto o vídeo estiver reproduzindo.'}</p>
-          <details class="video-manual-fallback" data-video-manual-fallback>
-            <summary>Problemas com a detecção automática?</summary>
-            <div>
-              <p>Use a confirmação manual somente quando o player ou a conexão não registrar o vídeo corretamente.</p>
-              <button class="btn btn--outline-orange" onclick="handleMarkVideoCompleted('${courseId}', '${lesson.id}')">
-                ${rewatch ? 'Marcar revisão manualmente' : 'Marcar vídeo como assistido'}
-              </button>
-            </div>
-          </details>
+          <p class="video-tracking-help">A conclusão é registrada automaticamente pelo player após o vídeo ser assistido.</p>
         </div>
       </div>
     `;
@@ -3624,18 +3615,6 @@ window.handleMarkPdfRead = function(courseId, lessonId) {
   Toast.show('Apostila marcada como lida!', 'success');
   renderLessonSidebar(courseId, lessonId, course, p);
   renderStepContent(courseId, lesson, lp, nextStep);
-};
-
-window.handleMarkVideoCompleted = function(courseId, lessonId) {
-  VideoTracking.stop({ flush: true });
-  const p = Progress.markVideoCompleted(AppState.currentUser.id, courseId, lessonId);
-  if (!p) return;
-  const lp = p.lessons[lessonId];
-  const course = COURSES_DATA.find(c => c.id === courseId);
-  const lesson = course.modules.flatMap(m => m.lessons).find(l => l.id === lessonId);
-  Toast.show('Vídeo marcado como concluído!', 'success');
-  renderLessonSidebar(courseId, lessonId, course, p);
-  renderStepContent(courseId, lesson, lp, 'quiz');
 };
 
 window.handleCompleteLesson = function(courseId, lessonId) {

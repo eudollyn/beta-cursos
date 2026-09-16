@@ -313,8 +313,29 @@ test('servidor Railway integra sessão, administração, curso, checkout e progr
     let progress = structuredClone(state.progress['jornada-teste']);
     progress.lessons['licao-teste'].pdfRead = true;
     progress = await syncProgress(progress);
-    progress.lessons['licao-teste'].videoCompleted = true;
-    progress = await syncProgress(progress);
+    response = await fetch(`${baseUrl}/api/me/video-progress/jornada-teste/licao-teste`, {
+      method: 'PUT',
+      headers: {
+        Cookie: studentCookie,
+        Origin: origin,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        trackingCycle: 1,
+        durationSeconds: 100,
+        lastPositionSeconds: 100,
+        intervals: [
+          [0, 10], [10, 20], [20, 30], [30, 40], [40, 50],
+          [50, 60], [60, 70], [70, 80], [80, 90], [90, 95],
+        ],
+        ended: true,
+      }),
+    });
+    const trackedVideo = await payload(response);
+    assert.equal(trackedVideo.tracking.completed, true);
+    assert.equal(trackedVideo.videoCompleted, true);
+    response = await fetch(`${baseUrl}/api/me/state`, { headers: { Cookie: studentCookie } });
+    progress = (await payload(response)).progress['jornada-teste'];
     response = await fetch(`${baseUrl}/api/me/quiz/jornada-teste/licao-teste/attempt`, {
       method: 'POST',
       headers: {

@@ -26,10 +26,11 @@ test('player rastreia YouTube, Vimeo e vídeo HTML5 e aguarda o fim real', () =>
   assert.match(appSource, /Saltos na linha do tempo não entram no percentual/);
 });
 
-test('confirmação manual permanece somente como contingência', () => {
-  assert.match(appSource, /Problemas com a detecção automática\?/);
-  assert.match(appSource, /Marcar vídeo como assistido/);
-  assert.match(appSource, /data-video-manual-fallback/);
+test('conclusão manual não é exposta porque o servidor exige rastreamento do player', () => {
+  assert.doesNotMatch(appSource, /handleMarkVideoCompleted/);
+  assert.doesNotMatch(appSource, /data-video-manual-fallback/);
+  assert.match(appSource, /A conclusão é registrada automaticamente pelo player/);
+  assert.match(appSource, /Continue assistindo para registrar a conclusão/);
   assert.match(styles, /\.video-manual-fallback/);
 });
 

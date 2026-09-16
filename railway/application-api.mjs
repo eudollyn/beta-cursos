@@ -1673,6 +1673,25 @@ function videoSourceKey(lesson) {
   ].join(':'));
 }
 
+async function completedVideoLessonIds(DB, userId, course) {
+  const rows = await all(DB.prepare(`SELECT lesson_id, source_key
+    FROM app_video_progress
+    WHERE user_id = ? AND course_id = ? AND completed_at IS NOT NULL`)
+    .bind(userId, course.id));
+  const completed = new Set();
+  for (const row of rows) {
+    const lesson = courseLesson(course, row.lesson_id);
+    if (
+      lesson
+      && lessonRequirements(lesson).hasVideo
+      && row.source_key === videoSourceKey(lesson)
+    ) {
+      completed.add(lesson.id);
+    }
+  }
+  return completed;
+}
+
 function videoTrackingCycle(value, fallback = 1) {
   return positiveInteger(value, fallback, 1, 10_000);
 }
@@ -1804,7 +1823,10 @@ function safeInteger(value, fallback = 0) {
   return Number.isSafeInteger(parsed) ? parsed : fallback;
 }
 
-function synchronizeProgress(course, existingValue, incomingValue) {
+function synchronizeProgress(course, existingValue, incomingValue, {
+  verifiedVideoLessonIds = new Set(),
+  verifiedVideoRewatchLessonIds = new Set(),
+} = {}) {
   const existing = existingValue && typeof existingValue === 'object'
     ? existingValue
     : initialProgress(course);
@@ -1821,11 +1843,16 @@ function synchronizeProgress(course, existingValue, incomingValue) {
     const old = existing.lessons?.[lesson.id] || synchronized.lessons[lesson.id];
     const proposed = incomingLessons[lesson.id] || {};
     const rules = quizRules(course, lesson);
+    const videoVerified = requirements.hasVideo && verifiedVideoLessonIds.has(lesson.id);
     const state = {
       ...synchronized.lessons[lesson.id],
       unlocked: previousCompleted,
       pdfRead: !requirements.hasPdf || Boolean(old.pdfRead),
-      videoCompleted: !requirements.hasVideo || Boolean(old.videoCompleted),
+      // A conclusão do vídeo nunca é uma afirmação do navegador: ela vem do
+      // registro de acompanhamento do player em app_video_progress. Manter a
+      // conclusão já persistida preserva alunos que concluíram antes desta
+      // proteção; novos avanços precisam de evidência do servidor.
+      videoCompleted: !requirements.hasVideo || Boolean(old.videoCompleted) || videoVerified,
       quizStatus: requirements.hasQuiz
         ? (QUIZ_STATUSES.has(old.quizStatus) ? old.quizStatus : 'locked')
         : 'passed',
@@ -1852,14 +1879,12 @@ function synchronizeProgress(course, existingValue, incomingValue) {
       state.pdfRead = true;
       transitionCount += 1;
     }
-    if (
-      requirements.hasVideo
-      && !state.videoCompleted
-      && proposed.videoCompleted === true
-      && state.pdfRead
-    ) {
-      state.videoCompleted = true;
-      transitionCount += 1;
+    if (requirements.hasVideo && proposed.videoCompleted === true && !Boolean(old.videoCompleted) && !videoVerified) {
+      throw new ApplicationError(
+        409,
+        'video_tracking_required',
+        'A conclusão do vídeo precisa ser confirmada pelo player antes de avançar.',
+      );
     }
     if (
       requirements.hasQuiz
@@ -1884,6 +1909,13 @@ function synchronizeProgress(course, existingValue, incomingValue) {
         && !state.reWatchedAfterExhaustion
         && proposed.reWatchedAfterExhaustion === true
       ) {
+        if (!verifiedVideoRewatchLessonIds.has(lesson.id)) {
+          throw new ApplicationError(
+            409,
+            'video_tracking_required',
+            'A revisão do vídeo precisa ser confirmada pelo player antes de liberar nova tentativa.',
+          );
+        }
         state.reWatchedAfterExhaustion = true;
         transitionCount += 1;
       }
@@ -2042,7 +2074,8 @@ async function handleProgressSync(request, context, courseId) {
   let existing;
   try { existing = row ? JSON.parse(row.snapshot_json) : initialProgress(course); }
   catch { existing = initialProgress(course); }
-  const progress = synchronizeProgress(course, existing, payload.progress);
+  const verifiedVideoLessonIds = await completedVideoLessonIds(context.DB, user.id, course);
+  const progress = synchronizeProgress(course, existing, payload.progress, { verifiedVideoLessonIds });
   const timestamp = nowIso();
   if (row) {
     const nextVersion = Number(row.version || 1) + 1;
@@ -2090,7 +2123,8 @@ async function videoProgressAccess(request, context, courseId, lessonId) {
     FROM app_progress WHERE user_id = ? AND course_id = ?`)
     .bind(user.id, safeCourseId));
   const existingProgress = parseJsonObject(progressRow?.snapshot_json, initialProgress(course));
-  const progress = synchronizeProgress(course, existingProgress, existingProgress);
+  const verifiedVideoLessonIds = await completedVideoLessonIds(context.DB, user.id, course);
+  const progress = synchronizeProgress(course, existingProgress, existingProgress, { verifiedVideoLessonIds });
   const lessonProgress = progress.lessons?.[safeLessonId];
   const requirements = lessonRequirements(lesson);
   if (!lessonProgress?.unlocked) {
@@ -2110,6 +2144,7 @@ async function videoProgressAccess(request, context, courseId, lessonId) {
     safeLessonId,
     provider: videoProvider(lesson),
     sourceKey: videoSourceKey(lesson),
+    verifiedVideoLessonIds,
   };
 }
 
@@ -2222,7 +2257,14 @@ async function handleVideoProgress(request, context, courseId, lessonId) {
         },
       },
     };
-    const next = synchronizeProgress(access.course, current, proposed);
+    const next = synchronizeProgress(access.course, current, proposed, {
+      verifiedVideoLessonIds: new Set([access.safeLessonId]),
+      // Uma nova conclusão no ciclo atual é a única prova válida de que uma
+      // revisão após tentativas esgotadas realmente aconteceu.
+      verifiedVideoRewatchLessonIds: !wasCompleted
+        ? new Set([access.safeLessonId])
+        : new Set(),
+    });
     if (JSON.stringify(next) === JSON.stringify(current)) {
       synchronizedProgress = current;
       return;
@@ -2240,7 +2282,14 @@ async function handleVideoProgress(request, context, courseId, lessonId) {
         version,
       )
       .run();
-    if (runChanges(result) === 1) synchronizedProgress = next;
+    if (runChanges(result) !== 1) {
+      throw new ApplicationError(
+        409,
+        'progress_conflict',
+        'O progresso mudou em outra sessão. Atualize e tente novamente.',
+      );
+    }
+    synchronizedProgress = next;
   };
 
   if (typeof context.DB.transaction === 'function') await context.DB.transaction(operation);
@@ -2449,7 +2498,8 @@ async function handleQuizAttempt(request, context, courseId, lessonId) {
     let existing;
     try { existing = row ? JSON.parse(row.snapshot_json) : initialProgress(course); }
     catch { existing = initialProgress(course); }
-    const progress = synchronizeProgress(course, existing, existing);
+    const verifiedVideoLessonIds = await completedVideoLessonIds(DB, user.id, course);
+    const progress = synchronizeProgress(course, existing, existing, { verifiedVideoLessonIds });
     const lessonProgress = progress.lessons?.[safeLessonId];
     if (
       !lessonProgress?.unlocked

@@ -1698,6 +1698,217 @@ test('proprietário distribui funções e facilitador fica limitado ao acompanha
   assert.equal((await payload(response)).error.code, 'role_managed_by_configuration');
 });
 
+test('P1-02: sincronização genérica não aceita conclusão de vídeo sem rastreamento do player', async () => {
+  const DB = createDatabase();
+  const stored = DB.database.prepare('SELECT data_json FROM courses WHERE id = ?')
+    .get('jornada-lidere');
+  const course = JSON.parse(stored.data_json);
+  const lesson = course.modules[0].lessons[0];
+  lesson.pdfUrl = 'https://cdn.example.com/apostila.pdf';
+  lesson.videoProvider = 'direct';
+  lesson.videoUrl = 'https://cdn.example.com/licao-1.mp4';
+  DB.database.prepare('UPDATE courses SET data_json = ? WHERE id = ?')
+    .run(JSON.stringify(course), course.id);
+
+  const registration = await register(DB, { email: 'video-bypass@example.com' });
+  await checkout(DB, registration.cookie, { 'Idempotency-Key': 'checkout-video-bypass-1' });
+
+  let response = await handleApplicationApi(request('/api/me/state', {
+    cookie: registration.cookie,
+  }), { DB, config: baseConfig });
+  let progress = (await payload(response)).progress['jornada-lidere'];
+  progress.lessons['licao-1'].videoCompleted = true;
+  response = await handleApplicationApi(request('/api/me/progress/jornada-lidere', {
+    method: 'PUT',
+    cookie: registration.cookie,
+    body: { progress },
+  }), { DB, config: baseConfig });
+  assert.equal(response.status, 409);
+  assert.equal((await payload(response)).error.code, 'video_tracking_required');
+
+  response = await handleApplicationApi(request('/api/me/state', {
+    cookie: registration.cookie,
+  }), { DB, config: baseConfig });
+  progress = (await payload(response)).progress['jornada-lidere'];
+  progress.lessons['licao-1'].pdfRead = true;
+  response = await handleApplicationApi(request('/api/me/progress/jornada-lidere', {
+    method: 'PUT',
+    cookie: registration.cookie,
+    body: { progress },
+  }), { DB, config: baseConfig });
+  assert.equal(response.status, 200);
+  progress = (await payload(response)).progress;
+  progress.lessons['licao-1'].videoCompleted = true;
+  response = await handleApplicationApi(request('/api/me/progress/jornada-lidere', {
+    method: 'PUT',
+    cookie: registration.cookie,
+    body: { progress },
+  }), { DB, config: baseConfig });
+  assert.equal(response.status, 409);
+  assert.equal((await payload(response)).error.code, 'video_tracking_required');
+
+  response = await handleApplicationApi(request(
+    '/api/me/video-progress/jornada-lidere/licao-1',
+    {
+      method: 'PUT',
+      cookie: registration.cookie,
+      body: {
+        trackingCycle: 1,
+        durationSeconds: 100,
+        lastPositionSeconds: 100,
+        intervals: [
+          [0, 10], [10, 20], [20, 30], [30, 40], [40, 50],
+          [50, 60], [60, 70], [70, 80], [80, 90], [90, 95],
+        ],
+        ended: true,
+      },
+    },
+  ), { DB, config: baseConfig });
+  assert.equal(response.status, 200);
+  let result = await payload(response);
+  assert.equal(result.tracking.completed, true);
+  assert.equal(result.videoCompleted, true);
+
+  response = await handleApplicationApi(request('/api/me/state', {
+    cookie: registration.cookie,
+  }), { DB, config: baseConfig });
+  progress = (await payload(response)).progress['jornada-lidere'];
+  assert.equal(progress.lessons['licao-1'].videoCompleted, true);
+  assert.equal(progress.lessons['licao-1'].quizStatus, 'available');
+  response = await handleApplicationApi(request('/api/me/quiz/jornada-lidere/licao-1/attempt', {
+    method: 'POST',
+    cookie: registration.cookie,
+    headers: { 'Idempotency-Key': 'quiz-video-bypass-1' },
+    body: { answers: { q1: 'a' } },
+  }), { DB, config: baseConfig });
+  result = await payload(response);
+  assert.equal(result.passed, true);
+  assert.equal(result.progress.lessons['licao-1'].lessonCompleted, true);
+});
+
+test('P1-02: lição somente com vídeo só pode ser finalizada após rastreamento válido', async () => {
+  const DB = createDatabase();
+  const stored = DB.database.prepare('SELECT data_json FROM courses WHERE id = ?')
+    .get('jornada-lidere');
+  const course = JSON.parse(stored.data_json);
+  const lesson = course.modules[0].lessons[0];
+  lesson.quiz = [];
+  lesson.videoProvider = 'direct';
+  lesson.videoUrl = 'https://cdn.example.com/somente-video.mp4';
+  DB.database.prepare('UPDATE courses SET data_json = ? WHERE id = ?')
+    .run(JSON.stringify(course), course.id);
+
+  const registration = await register(DB, { email: 'somente-video@example.com' });
+  await checkout(DB, registration.cookie, { 'Idempotency-Key': 'checkout-somente-video-1' });
+  let response = await handleApplicationApi(request('/api/me/state', {
+    cookie: registration.cookie,
+  }), { DB, config: baseConfig });
+  let progress = (await payload(response)).progress['jornada-lidere'];
+  progress.lessons['licao-1'].videoCompleted = true;
+  progress.lessons['licao-1'].lessonCompleted = true;
+  response = await handleApplicationApi(request('/api/me/progress/jornada-lidere', {
+    method: 'PUT',
+    cookie: registration.cookie,
+    body: { progress },
+  }), { DB, config: baseConfig });
+  assert.equal(response.status, 409);
+  assert.equal((await payload(response)).error.code, 'video_tracking_required');
+
+  response = await handleApplicationApi(request(
+    '/api/me/video-progress/jornada-lidere/licao-1',
+    {
+      method: 'PUT',
+      cookie: registration.cookie,
+      body: {
+        trackingCycle: 1,
+        durationSeconds: 20,
+        lastPositionSeconds: 20,
+        intervals: [[0, 10], [10, 20]],
+        ended: true,
+      },
+    },
+  ), { DB, config: baseConfig });
+  assert.equal(response.status, 200);
+  assert.equal((await payload(response)).videoCompleted, true);
+
+  response = await handleApplicationApi(request('/api/me/state', {
+    cookie: registration.cookie,
+  }), { DB, config: baseConfig });
+  progress = (await payload(response)).progress['jornada-lidere'];
+  progress.lessons['licao-1'].lessonCompleted = true;
+  response = await handleApplicationApi(request('/api/me/progress/jornada-lidere', {
+    method: 'PUT',
+    cookie: registration.cookie,
+    body: { progress },
+  }), { DB, config: baseConfig });
+  assert.equal(response.status, 200);
+  const result = await payload(response);
+  assert.equal(result.progress.lessons['licao-1'].lessonCompleted, true);
+  assert.equal(result.progress.lessons['licao-2'].unlocked, true);
+});
+
+test('P1-02: revisão de vídeo após tentativas esgotadas exige um novo ciclo rastreado', async () => {
+  const DB = createDatabase();
+  const stored = DB.database.prepare('SELECT data_json FROM courses WHERE id = ?')
+    .get('jornada-lidere');
+  const course = JSON.parse(stored.data_json);
+  course.quizConfig.maxAttempts = 1;
+  const lesson = course.modules[0].lessons[0];
+  lesson.videoProvider = 'direct';
+  lesson.videoUrl = 'https://cdn.example.com/revisao-video.mp4';
+  DB.database.prepare('UPDATE courses SET data_json = ? WHERE id = ?')
+    .run(JSON.stringify(course), course.id);
+
+  const registration = await register(DB, { email: 'revisao-video@example.com' });
+  await checkout(DB, registration.cookie, { 'Idempotency-Key': 'checkout-revisao-video-1' });
+  const watchedVideo = async cycle => handleApplicationApi(request(
+    '/api/me/video-progress/jornada-lidere/licao-1',
+    {
+      method: 'PUT',
+      cookie: registration.cookie,
+      body: {
+        trackingCycle: cycle,
+        durationSeconds: 20,
+        lastPositionSeconds: 20,
+        intervals: [[0, 10], [10, 20]],
+        ended: true,
+      },
+    },
+  ), { DB, config: baseConfig });
+
+  let response = await watchedVideo(1);
+  assert.equal(response.status, 200);
+  response = await handleApplicationApi(request('/api/me/quiz/jornada-lidere/licao-1/attempt', {
+    method: 'POST',
+    cookie: registration.cookie,
+    headers: { 'Idempotency-Key': 'quiz-revisao-video-1' },
+    body: { answers: { q1: 'b' } },
+  }), { DB, config: baseConfig });
+  assert.equal((await payload(response)).status, 'exhausted');
+
+  response = await handleApplicationApi(request('/api/me/state', {
+    cookie: registration.cookie,
+  }), { DB, config: baseConfig });
+  let progress = (await payload(response)).progress['jornada-lidere'];
+  progress.lessons['licao-1'].reWatchedAfterExhaustion = true;
+  response = await handleApplicationApi(request('/api/me/progress/jornada-lidere', {
+    method: 'PUT',
+    cookie: registration.cookie,
+    body: { progress },
+  }), { DB, config: baseConfig });
+  assert.equal(response.status, 409);
+  assert.equal((await payload(response)).error.code, 'video_tracking_required');
+
+  response = await watchedVideo(2);
+  assert.equal(response.status, 200);
+  response = await handleApplicationApi(request('/api/me/state', {
+    cookie: registration.cookie,
+  }), { DB, config: baseConfig });
+  progress = (await payload(response)).progress['jornada-lidere'];
+  assert.equal(progress.lessons['licao-1'].quizStatus, 'available');
+  assert.equal(progress.lessons['licao-1'].attemptRound, 2);
+});
+
 test('rastreamento soma trechos contínuos e só conclui após o fim real do vídeo', async () => {
   const DB = createDatabase();
   const stored = DB.database.prepare('SELECT data_json FROM courses WHERE id = ?')
