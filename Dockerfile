@@ -11,9 +11,9 @@ RUN corepack enable
 
 FROM base AS dependencies
 
-COPY package.json ./
+COPY package.json pnpm-lock.yaml ./
 
-RUN pnpm install --no-frozen-lockfile
+RUN pnpm install --frozen-lockfile
 
 FROM dependencies AS build
 
