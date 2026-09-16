@@ -23,6 +23,7 @@ const ASSIGNABLE_TEAM_ROLES = new Set(['student', 'facilitator', 'admin']);
 const ACCOUNT_STATUSES = new Set(['active', 'disabled']);
 const COURSE_CATEGORIES = new Set(['Alcançar', 'Adorar', 'Relacionar', 'Discipular', 'Engajar']);
 const PAYMENT_METHODS = new Set(['pix', 'credit_card', 'boleto']);
+const PAYMENT_ACCESS_REVOKING_STATUSES = new Set(['rejected', 'cancelled', 'refunded', 'charged_back']);
 const QUIZ_STATUSES = new Set(['locked', 'available', 'failed', 'exhausted', 'passed']);
 const VIDEO_COMPLETION_THRESHOLD = 0.95;
 const VIDEO_TRACKING_MAX_DURATION_SECONDS = 24 * 60 * 60;
@@ -572,6 +573,20 @@ async function ensureApplicationSchema(DB) {
         UNIQUE (user_id, idempotency_key)
       )`),
       DB.prepare('CREATE INDEX IF NOT EXISTS app_checkouts_user_idx ON app_checkouts (user_id, created_at)'),
+      DB.prepare(`CREATE TABLE IF NOT EXISTS app_enrollment_grants (
+        id TEXT PRIMARY KEY,
+        grant_key TEXT NOT NULL UNIQUE,
+        user_id TEXT NOT NULL,
+        course_id TEXT NOT NULL,
+        source TEXT NOT NULL,
+        checkout_id TEXT,
+        status TEXT NOT NULL,
+        suspension_reason TEXT,
+        suspended_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`),
+      DB.prepare('CREATE INDEX IF NOT EXISTS app_enrollment_grants_user_course_status_idx ON app_enrollment_grants (user_id, course_id, status)'),
     ]).catch(error => {
       INITIALIZED_DATABASES.delete(DB);
       throw error;
@@ -1933,15 +1948,35 @@ function synchronizeProgress(course, existingValue, incomingValue) {
 async function ensureEnrollment(context, userId, course, source, checkoutId) {
   const timestamp = nowIso();
   const id = createId('enr');
+  const normalizedSource = String(source || 'manual').trim().toLowerCase() || 'manual';
+  const normalizedCheckoutId = checkoutId ? String(checkoutId).trim() : null;
+  const grantKey = normalizedCheckoutId
+    ? `checkout:${normalizedCheckoutId}`
+    : `source:${normalizedSource}:${userId}:${course.id}`;
+
+  // A matrícula é uma visão agregada do acesso. Cada origem recebe sua própria
+  // concessão para que um estorno nunca apague uma liberação pastoral/manual ou
+  // uma segunda compra válida do mesmo curso.
+  await context.DB.prepare(`INSERT INTO app_enrollment_grants
+    (id, grant_key, user_id, course_id, source, checkout_id, status,
+      suspension_reason, suspended_at, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, 'active', NULL, NULL, ?, ?)
+    ON CONFLICT (grant_key) DO UPDATE SET
+      status = 'active',
+      suspension_reason = NULL,
+      suspended_at = NULL,
+      updated_at = excluded.updated_at`)
+    .bind(createId('eng'), grantKey, userId, course.id, normalizedSource,
+      normalizedCheckoutId, timestamp, timestamp)
+    .run();
+
   await context.DB.prepare(`INSERT INTO app_enrollments
     (id, user_id, course_id, status, source, checkout_id, created_at, updated_at)
     VALUES (?, ?, ?, 'active', ?, ?, ?, ?)
     ON CONFLICT (user_id, course_id) DO UPDATE SET
       status = 'active',
-      source = excluded.source,
-      checkout_id = COALESCE(excluded.checkout_id, app_enrollments.checkout_id),
       updated_at = excluded.updated_at`)
-    .bind(id, userId, course.id, source, checkoutId, timestamp, timestamp)
+    .bind(id, userId, course.id, normalizedSource, normalizedCheckoutId, timestamp, timestamp)
     .run();
   const enrollment = await first(context.DB.prepare(`SELECT
     id, course_id, status, created_at
@@ -2870,6 +2905,13 @@ async function synchronizeMercadoPagoOrder(context, orderId, {
         'mercado_pago',
         checkout.id,
       );
+    } else if (PAYMENT_ACCESS_REVOKING_STATUSES.has(nextStatus)) {
+      await suspendCheckoutEnrollment(
+        transactionContext,
+        checkout,
+        nextStatus,
+        timestamp,
+      );
     }
     return checkoutById(transactionContext, checkout.id);
   });
@@ -3624,6 +3666,36 @@ function serializeTeamMember(row, config) {
     createdAt: row.created_at,
     roleManagedByConfig: ['owner', 'admin'].includes(configuredRole),
   };
+}
+
+async function suspendCheckoutEnrollment(context, checkout, paymentStatus, timestamp) {
+  if (!PAYMENT_ACCESS_REVOKING_STATUSES.has(paymentStatus)) return null;
+  const grantKey = `checkout:${checkout.id}`;
+  await context.DB.prepare(`UPDATE app_enrollment_grants SET
+    status = 'suspended',
+    suspension_reason = ?,
+    suspended_at = COALESCE(suspended_at, ?),
+    updated_at = ?
+    WHERE grant_key = ? AND user_id = ? AND course_id = ?`)
+    .bind(`payment_${paymentStatus}`, timestamp, timestamp, grantKey,
+      checkout.user_id, checkout.course_id)
+    .run();
+
+  const activeGrant = await first(context.DB.prepare(`SELECT id
+    FROM app_enrollment_grants
+    WHERE user_id = ? AND course_id = ? AND status = 'active'
+    LIMIT 1`).bind(checkout.user_id, checkout.course_id));
+
+  // Only change the aggregate enrollment when no other valid origin remains.
+  // This keeps manual/pastoral access and a separate approved payment intact.
+  await context.DB.prepare(`UPDATE app_enrollments SET
+    status = ?, updated_at = ?
+    WHERE user_id = ? AND course_id = ?`)
+    .bind(activeGrant ? 'active' : 'suspended', timestamp,
+      checkout.user_id, checkout.course_id)
+    .run();
+
+  return activeGrant;
 }
 
 async function handleAdminTeam(request, context) {

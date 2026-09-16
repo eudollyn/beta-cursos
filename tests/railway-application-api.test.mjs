@@ -295,6 +295,24 @@ async function checkout(DB, cookie, headers = {}) {
   return { response, body };
 }
 
+async function notifyMercadoPagoOrder(DB, orderId, requestId) {
+  const timestamp = '1700000000';
+  const signature = createHmac('sha256', 'test-webhook-secret')
+    .update(`id:${String(orderId).toLowerCase()};request-id:${requestId};ts:${timestamp};`)
+    .digest('hex');
+  return handleApplicationApi(request(
+    `/api/webhooks/mercado-pago?data.id=${encodeURIComponent(orderId)}&type=order`,
+    {
+      method: 'POST',
+      headers: {
+        'X-Request-Id': requestId,
+        'X-Signature': `ts=${timestamp},v1=${signature}`,
+      },
+      body: { type: 'order', data: { id: orderId } },
+    },
+  ), { DB, config: baseConfig });
+}
+
 test('catálogo público oculta conteúdo e rotas administrativas seguem para o módulo próprio', async () => {
   const DB = createDatabase();
   let response = await handleApplicationApi(request('/api/courses'), { DB, config: baseConfig });
@@ -695,6 +713,119 @@ test('webhook do Mercado Pago valida assinatura e libera a matrícula', async ()
     'SELECT status FROM app_enrollments WHERE user_id = ? AND course_id = ?',
   ).get(registration.body.user.id, 'jornada-lidere');
   assert.equal(enrollment.status, 'active');
+});
+
+test('P1-01: estorno e chargeback suspendem só a concessão do checkout e reaprovação restaura acesso', async () => {
+  const DB = createDatabase();
+  const registration = await register(DB, { email: 'reembolso@example.com' });
+  let response = await handleApplicationApi(request('/api/checkouts', {
+    method: 'POST',
+    cookie: registration.cookie,
+    headers: { 'Idempotency-Key': 'checkout-reembolso-1' },
+    body: { courseId: 'jornada-lidere', paymentMethod: 'pix' },
+  }), { DB, config: baseConfig });
+  const firstCheckout = await payload(response);
+  const firstOrderId = orderByCheckout.get(firstCheckout.checkout.id);
+  const firstOrder = mockOrders.get(firstOrderId);
+
+  firstOrder.status = 'processed';
+  response = await notifyMercadoPagoOrder(DB, firstOrderId, 'reembolso-approved-1');
+  assert.equal(response.status, 200);
+  assert.equal(DB.database.prepare(`SELECT status FROM app_enrollments
+    WHERE user_id = ? AND course_id = ?`).get(
+    registration.body.user.id,
+    'jornada-lidere',
+  ).status, 'active');
+
+  firstOrder.status = 'refunded';
+  response = await notifyMercadoPagoOrder(DB, firstOrderId, 'reembolso-refunded-1');
+  assert.equal(response.status, 200);
+  assert.equal(DB.database.prepare('SELECT status FROM app_checkouts WHERE id = ?')
+    .get(firstCheckout.checkout.id).status, 'refunded');
+  assert.equal(DB.database.prepare(`SELECT status FROM app_enrollments
+    WHERE user_id = ? AND course_id = ?`).get(
+    registration.body.user.id,
+    'jornada-lidere',
+  ).status, 'suspended');
+  const refundedGrant = DB.database.prepare(`SELECT status, suspension_reason, suspended_at
+    FROM app_enrollment_grants WHERE checkout_id = ?`).get(firstCheckout.checkout.id);
+  assert.equal(refundedGrant.status, 'suspended');
+  assert.equal(refundedGrant.suspension_reason, 'payment_refunded');
+  assert.ok(refundedGrant.suspended_at);
+
+  const suspendedState = await handleApplicationApi(request('/api/me/state', {
+    cookie: registration.cookie,
+  }), { DB, config: baseConfig });
+  assert.deepEqual((await payload(suspendedState)).enrollments, []);
+
+  // Webhook retries are harmless and do not create another enrollment/grant.
+  response = await notifyMercadoPagoOrder(DB, firstOrderId, 'reembolso-refunded-retry');
+  assert.equal(response.status, 200);
+  assert.equal(DB.database.prepare('SELECT COUNT(*) AS count FROM app_enrollments').get().count, 1);
+  assert.equal(DB.database.prepare('SELECT COUNT(*) AS count FROM app_enrollment_grants').get().count, 1);
+
+  firstOrder.status = 'processed';
+  response = await notifyMercadoPagoOrder(DB, firstOrderId, 'reembolso-reapproved-1');
+  assert.equal(response.status, 200);
+  assert.equal(DB.database.prepare(`SELECT status FROM app_enrollments
+    WHERE user_id = ? AND course_id = ?`).get(
+    registration.body.user.id,
+    'jornada-lidere',
+  ).status, 'active');
+  assert.equal(DB.database.prepare(`SELECT status, suspension_reason, suspended_at
+    FROM app_enrollment_grants WHERE checkout_id = ?`).get(firstCheckout.checkout.id).status, 'active');
+  assert.equal(DB.database.prepare('SELECT COUNT(*) AS count FROM app_enrollment_grants').get().count, 1);
+
+  firstOrder.status = 'charged_back';
+  response = await notifyMercadoPagoOrder(DB, firstOrderId, 'reembolso-chargeback-1');
+  assert.equal(response.status, 200);
+  assert.equal(DB.database.prepare(`SELECT status FROM app_enrollments
+    WHERE user_id = ? AND course_id = ?`).get(
+    registration.body.user.id,
+    'jornada-lidere',
+  ).status, 'suspended');
+  assert.equal(DB.database.prepare(`SELECT suspension_reason FROM app_enrollment_grants
+    WHERE checkout_id = ?`).get(firstCheckout.checkout.id).suspension_reason, 'payment_charged_back');
+
+  // A second approved payment keeps the course available when the first one is revoked.
+  response = await handleApplicationApi(request('/api/checkouts', {
+    method: 'POST',
+    cookie: registration.cookie,
+    headers: { 'Idempotency-Key': 'checkout-reembolso-2' },
+    body: { courseId: 'jornada-lidere', paymentMethod: 'pix' },
+  }), { DB, config: baseConfig });
+  const secondCheckout = await payload(response);
+  const secondOrderId = orderByCheckout.get(secondCheckout.checkout.id);
+  mockOrders.get(secondOrderId).status = 'processed';
+  response = await notifyMercadoPagoOrder(DB, secondOrderId, 'reembolso-approved-2');
+  assert.equal(response.status, 200);
+  assert.equal(DB.database.prepare(`SELECT status FROM app_enrollments
+    WHERE user_id = ? AND course_id = ?`).get(
+    registration.body.user.id,
+    'jornada-lidere',
+  ).status, 'active');
+  assert.equal(DB.database.prepare('SELECT COUNT(*) AS count FROM app_enrollment_grants').get().count, 2);
+
+  // A pastoral/manual grant is also independent from payment lifecycle.
+  const timestamp = new Date().toISOString();
+  DB.database.prepare(`INSERT INTO app_enrollment_grants
+    (id, grant_key, user_id, course_id, source, checkout_id, status,
+      suspension_reason, suspended_at, created_at, updated_at)
+    VALUES (?, ?, ?, ?, 'pastoral', NULL, 'active', NULL, NULL, ?, ?)`)
+    .run('eng-pastoral-1', `source:pastoral:${registration.body.user.id}:jornada-lidere`,
+      registration.body.user.id, 'jornada-lidere', timestamp, timestamp);
+  mockOrders.get(secondOrderId).status = 'charged_back';
+  response = await notifyMercadoPagoOrder(DB, secondOrderId, 'reembolso-chargeback-2');
+  assert.equal(response.status, 200);
+  assert.equal(DB.database.prepare(`SELECT status FROM app_enrollments
+    WHERE user_id = ? AND course_id = ?`).get(
+    registration.body.user.id,
+    'jornada-lidere',
+  ).status, 'active');
+  assert.equal(DB.database.prepare(`SELECT status FROM app_enrollment_grants
+    WHERE grant_key = ?`).get(
+    `source:pastoral:${registration.body.user.id}:jornada-lidere`,
+  ).status, 'active');
 });
 
 test('checkout reverte checkout e matrícula se a criação do progresso falhar', async () => {
