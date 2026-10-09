@@ -22,8 +22,33 @@ function migrationTableSql(dialect) {
       )`;
 }
 
-function checksum(contents) {
+function rawChecksum(contents) {
   return createHash('sha256').update(contents).digest('hex');
+}
+
+function canonicalMigrationContents(contents) {
+  // GitHub checkouts use LF while the first Railway deployment was uploaded
+  // from Windows with CRLF. A migration's meaning must not depend on that
+  // checkout detail, so new checksum records always use LF line endings.
+  return contents.replace(/\r\n?/g, '\n');
+}
+
+function checksum(contents) {
+  return rawChecksum(canonicalMigrationContents(contents));
+}
+
+function acceptedChecksums(contents) {
+  const canonical = canonicalMigrationContents(contents);
+  // Before checksums were canonical, the database could contain either the
+  // Git LF hash or the Windows CRLF hash. Keep accepting only those two
+  // byte-level representations of the exact same text; any content change
+  // still fails closed.
+  return new Set([
+    checksum(contents),
+    rawChecksum(contents),
+    rawChecksum(canonical),
+    rawChecksum(canonical.replace(/\n/g, '\r\n')),
+  ]);
 }
 
 async function applyMigrationFiles(database, options) {
@@ -46,7 +71,7 @@ async function applyMigrationFiles(database, options) {
     const contents = await readFile(join(directory, name), 'utf8');
     const digest = checksum(contents);
     if (applied.has(name)) {
-      if (applied.get(name) !== digest) {
+      if (!acceptedChecksums(contents).has(applied.get(name))) {
         throw new Error(`A migration ${name} foi alterada depois de aplicada.`);
       }
       result.skipped.push(name);

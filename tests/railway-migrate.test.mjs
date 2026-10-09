@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -15,12 +16,16 @@ afterEach(async () => {
   );
 });
 
-async function migrationDirectory() {
+function sha256(contents) {
+  return createHash('sha256').update(contents).digest('hex');
+}
+
+async function migrationDirectory(contents = 'CREATE TABLE migration_example (id INTEGER PRIMARY KEY);') {
   const directory = await mkdtemp(join(tmpdir(), 'beta-cursos-migrations-'));
   temporaryDirectories.push(directory);
   await writeFile(
     join(directory, '001_create_example.sql'),
-    'CREATE TABLE migration_example (id INTEGER PRIMARY KEY);',
+    contents,
     'utf8',
   );
   return directory;
@@ -131,4 +136,93 @@ test('SQLite mantém o fluxo existente sem advisory lock global', async () => {
   );
   assert.equal(events[0].type, 'exec');
   assert.match(events[0].sql, /CREATE TABLE IF NOT EXISTS railway_migrations/);
+});
+
+test('aceita checksum legado CRLF para migration idêntica entregue pelo GitHub em LF', async () => {
+  const lfContents = [
+    'CREATE TABLE migration_example (',
+    '  id INTEGER PRIMARY KEY',
+    ');',
+    '',
+  ].join('\n');
+  const directory = await migrationDirectory(lfContents);
+  const events = [];
+  const legacyWindowsChecksum = sha256(lfContents.replace(/\n/g, '\r\n'));
+  const database = migrationConnection('sqlite', events, new Map([
+    ['001_create_example.sql', legacyWindowsChecksum],
+  ]));
+
+  const result = await applyMigrations(database, { directory });
+
+  assert.deepEqual(result.applied, []);
+  assert.deepEqual(result.skipped, ['001_create_example.sql']);
+  assert.equal(
+    events.some(event => event.type === 'exec' && /CREATE TABLE migration_example/i.test(event.sql)),
+    false,
+  );
+});
+
+test('aceita checksum legado LF para migration idêntica lida em CRLF', async () => {
+  const lfContents = [
+    'CREATE TABLE migration_example (',
+    '  id INTEGER PRIMARY KEY',
+    ');',
+    '',
+  ].join('\n');
+  const directory = await migrationDirectory(lfContents.replace(/\n/g, '\r\n'));
+  const events = [];
+  const database = migrationConnection('sqlite', events, new Map([
+    ['001_create_example.sql', sha256(lfContents)],
+  ]));
+
+  const result = await applyMigrations(database, { directory });
+
+  assert.deepEqual(result.applied, []);
+  assert.deepEqual(result.skipped, ['001_create_example.sql']);
+});
+
+test('registra migration nova com checksum canônico LF mesmo quando o arquivo foi lido em CRLF', async () => {
+  const lfContents = [
+    'CREATE TABLE migration_example (',
+    '  id INTEGER PRIMARY KEY',
+    ');',
+    '',
+  ].join('\n');
+  const directory = await migrationDirectory(lfContents.replace(/\n/g, '\r\n'));
+  const events = [];
+  const database = migrationConnection('sqlite', events);
+
+  await applyMigrations(database, { directory });
+
+  const insertion = events.find(event => (
+    event.type === 'run' && /INSERT INTO railway_migrations/i.test(event.sql)
+  ));
+  assert.equal(insertion.values[1], sha256(lfContents));
+});
+
+test('rejeita mudança semântica mesmo quando o checksum legado usava CRLF', async () => {
+  const originalLfContents = [
+    'CREATE TABLE migration_example (',
+    '  id INTEGER PRIMARY KEY',
+    ');',
+    '',
+  ].join('\n');
+  const changedLfContents = [
+    'CREATE TABLE migration_example (',
+    '  id INTEGER PRIMARY KEY,',
+    '  changed TEXT NOT NULL',
+    ');',
+    '',
+  ].join('\n');
+  const directory = await migrationDirectory(changedLfContents);
+  const events = [];
+  const legacyWindowsChecksum = sha256(originalLfContents.replace(/\n/g, '\r\n'));
+  const database = migrationConnection('sqlite', events, new Map([
+    ['001_create_example.sql', legacyWindowsChecksum],
+  ]));
+
+  await assert.rejects(
+    () => applyMigrations(database, { directory }),
+    /migration 001_create_example\.sql foi alterada depois de aplicada/i,
+  );
 });
